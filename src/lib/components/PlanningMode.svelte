@@ -123,7 +123,11 @@
         <h3>Today Tasks</h3>
         <ul>
             {#each $todos as task, index (task.id)}
-                <li class:completed={task.isComplete} class:focus={task.category === 'Focus'} transition:fade={{ duration: 300 }}>
+                <li 
+                    class:completed={task.isComplete} 
+                    class:focus={task.category === 'Focus'}
+                    transition:fade={{ duration: 300 }}
+                >
                     <span class="index">{index + 1}.</span>
                     <span class="icon">{getCategoryIcon(task.category)}</span>
                     <div class="content">
