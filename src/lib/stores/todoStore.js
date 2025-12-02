@@ -1,47 +1,117 @@
-// src/lib/stores/todoStore.js
+import { browser } from '$app/environment';
+import localforage from 'localforage';
 import { writable } from 'svelte/store';
 import { uid } from 'uid';
-import { classifyTask } from '$lib/utils/taskClassifier'; // <-- 🚨 새로 추가
+import { classifyTask } from '$lib/utils/taskClassifier';
 
-
-
-// (completeTodo 함수는 그대로 유지)
-// ...
-// 임시 데이터 구조 (나중에 DB와 연동될 구조)
-const initialTodos = [
-    { id: uid(10), title: "2hr Strength Training", isComplete: false, category: 'Focus', xp: 70 },
-    { id: uid(10), title: "Project Pitch Deck - Draft", isComplete: false, category: 'Focus', xp: 120 },
-    { id: uid(10), title: "Grocery Shopping (Weekly)", isComplete: false, category: 'Rhythm', xp: 40 },
-    { id: uid(10), title: "10min Meditation", isComplete: false, category: 'Rhythm', xp: 25 },
+const STORAGE_KEY = 'taskry.todos';
+const seedTodos = [
+	{ id: uid(10), title: '2hr Strength Training', isComplete: false, category: 'Focus', xp: 70 },
+	{ id: uid(10), title: 'Project Pitch Deck - Draft', isComplete: false, category: 'Focus', xp: 120 },
+	{ id: uid(10), title: 'Grocery Shopping (Weekly)', isComplete: false, category: 'Rhythm', xp: 40 },
+	{ id: uid(10), title: '10min Meditation', isComplete: false, category: 'Rhythm', xp: 25 }
 ];
 
-export const todos = writable(initialTodos);
+const cloneTodos = (list = []) => list.map((todo) => ({ ...todo }));
 
-/** 새로운 To-Do 항목을 추가합니다. */
-export const addTodo = (title) => {
-    // 🚨 Task 분류 로직 실행
-    const { category, baseXP } = classifyTask(title);
+let inMemoryTodos = cloneTodos(seedTodos);
 
-    todos.update(currentTodos => [
-        ...currentTodos,
-        {
-            id: uid(10),
-            title,
-            isComplete: false,
-            category: category, // 분류된 카테고리 적용
-            xp: baseXP          // 분류된 XP 적용
-        }
-    ]);
+export const todos = writable(cloneTodos(seedTodos));
+
+const storage = browser
+	? localforage.createInstance({
+			name: 'taskry',
+			storeName: 'taskry_todos',
+			description: 'Offline-first todo cache for Planning Mode'
+	  })
+	: null;
+
+const persistSnapshot = (nextTodos) => {
+	const snapshot = cloneTodos(nextTodos);
+	inMemoryTodos = snapshot;
+
+	if (storage) {
+		storage.setItem(STORAGE_KEY, snapshot).catch((error) => {
+			console.error('Failed to persist todos in IndexedDB', error);
+		});
+	}
+
+	return snapshot;
 };
-/** To-Do 항목을 완료 처리합니다. (Update) */
-export const completeTodo = (id) => {
-    // Micro Reward 계산 로직은 나중에 추가하고, 일단은 완료 상태만 변경
-    todos.update(currentTodos => {
-        const todoIndex = currentTodos.findIndex(t => t.id === id);
 
-        if (todoIndex !== -1) {
-            currentTodos[todoIndex].isComplete = !currentTodos[todoIndex].isComplete; // 토글 처리
-        }
-        return currentTodos;
-    });
+const hydrateFromIndexedDB = async () => {
+	if (!storage) {
+		todos.set(cloneTodos(inMemoryTodos));
+		return;
+	}
+
+	try {
+		const stored = await storage.getItem(STORAGE_KEY);
+
+		if (Array.isArray(stored)) {
+			const snapshot = cloneTodos(stored);
+			inMemoryTodos = snapshot;
+			todos.set(snapshot);
+			return;
+		}
+
+		await storage.setItem(STORAGE_KEY, inMemoryTodos);
+		todos.set(cloneTodos(inMemoryTodos));
+	} catch (error) {
+		console.error('Failed to hydrate todos from IndexedDB', error);
+		todos.set(cloneTodos(inMemoryTodos));
+	}
+};
+
+let isHydrated = !browser;
+
+const hydrationReady = (browser ? hydrateFromIndexedDB() : Promise.resolve()).finally(() => {
+	isHydrated = true;
+});
+
+const queueUpdate = (mutator) => {
+	const execute = () => {
+		todos.update((current) => {
+			const workingCopy = cloneTodos(current);
+			const updated = mutator(workingCopy);
+			return persistSnapshot(updated);
+		});
+	};
+
+	if (isHydrated) {
+		execute();
+	} else {
+		hydrationReady.finally(execute);
+	}
+};
+export const addTodo = (title) => {
+	const trimmedTitle = title?.trim();
+	if (!trimmedTitle) {
+		return;
+	}
+
+	const { category, baseXP } = classifyTask(trimmedTitle);
+
+	queueUpdate((currentTodos) => [
+		...currentTodos,
+		{
+			id: uid(10),
+			title: trimmedTitle,
+			isComplete: false,
+			category,
+			xp: baseXP
+		}
+	]);
+};
+
+export const completeTodo = (id) => {
+	if (!id) {
+		return;
+	}
+
+	queueUpdate((currentTodos) =>
+		currentTodos.map((todo) =>
+			todo.id === id ? { ...todo, isComplete: !todo.isComplete } : todo
+		)
+	);
 };

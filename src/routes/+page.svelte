@@ -17,8 +17,8 @@
 </script>
 
 <main class="app-container">
-<!--    <PlanningMode on:complete={handleTaskComplete} />-->
-        <RewardMode on:close={closeReward} />
+    <PlanningMode on:complete={handleTaskComplete} />
+<!--        <RewardMode on:close={closeReward} />-->
 </main>
 
 <style>

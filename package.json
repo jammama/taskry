@@ -32,6 +32,7 @@
 		"vite": "^7.2.2"
 	},
 	"dependencies": {
-		"uid": "^2.0.2"
+		"uid": "^2.0.2",
+		"vite-plugin-pwa": "^1.2.0"
 	}
 }
