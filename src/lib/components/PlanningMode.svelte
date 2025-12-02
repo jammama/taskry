@@ -10,6 +10,15 @@
     let editingId = null;
     let editingTitle = '';
     let editInputElement = null;
+    // 스와이프 제스처 상태 변수
+    let swipeStartX = null;
+    let swipeStartY = null;
+    let swipeCurrentX = null;
+    let swipeCurrentY = null;
+    let isSwiping = false;
+    let swipingId = null;
+    // 선택 상태 관리
+    let selectedIds = new Set();
     const dispatch = createEventDispatcher();
 
     // 카테고리별 아이콘 매핑 함수
@@ -65,6 +74,139 @@
 
     function handleDeleteTask(id) {
         deleteTodo(id);
+    }
+
+    // 스와이프 제스처 처리 함수들
+    function handleTouchStart(event, taskId) {
+        // 편집 모드 중일 때는 스와이프 비활성화
+        if (editingId === taskId) return;
+        
+        const touch = event.touches?.[0] || event;
+        swipeStartX = touch.clientX;
+        swipeStartY = touch.clientY;
+        swipeCurrentX = swipeStartX;
+        swipeCurrentY = swipeStartY;
+        isSwiping = false;
+        swipingId = taskId;
+    }
+
+    function handleTouchMove(event, taskId) {
+        // 편집 모드이거나 다른 항목을 스와이프 중이면 무시
+        if (swipingId !== taskId || editingId === taskId) return;
+        
+        const touch = event.touches?.[0] || event;
+        swipeCurrentX = touch.clientX;
+        swipeCurrentY = touch.clientY;
+        
+        const deltaX = swipeCurrentX - swipeStartX;
+        const deltaY = Math.abs(swipeCurrentY - swipeStartY);
+        
+        // 수평 스와이프가 수직 스와이프보다 큰 경우 (수평 스와이프 감지)
+        if (Math.abs(deltaX) > 10 && Math.abs(deltaX) > deltaY) {
+            isSwiping = true;
+            event.preventDefault(); // 스크롤 방지
+        }
+    }
+
+    function handleTouchEnd(event, taskId) {
+        // 다른 항목을 스와이프 중이면 무시
+        if (swipingId !== taskId) return;
+        
+        // 스와이프 방향에 따라 선택/해제 처리
+        const deltaX = swipeCurrentX - swipeStartX;
+        const threshold = 30; // 스와이프 임계값
+        
+        if (isSwiping) {
+            if (deltaX < -threshold) {
+                // 왼쪽으로 스와이프 - 선택
+                if (!selectedIds.has(taskId)) {
+                    selectedIds.add(taskId);
+                    selectedIds = selectedIds; // Svelte 반응성 트리거
+                    console.log(`${selectedIds.size}개 선택됨`);
+                }
+            } else if (deltaX > threshold) {
+                // 오른쪽으로 스와이프 - 선택 해제
+                if (selectedIds.has(taskId)) {
+                    selectedIds.delete(taskId);
+                    selectedIds = selectedIds; // Svelte 반응성 트리거
+                    console.log(`선택 해제됨 (현재 ${selectedIds.size}개 선택됨)`);
+                }
+            }
+        }
+        
+        // 스와이프 상태 초기화
+        swipeStartX = null;
+        swipeStartY = null;
+        swipeCurrentX = null;
+        swipeCurrentY = null;
+        isSwiping = false;
+        swipingId = null;
+    }
+
+    // 마우스 이벤트 처리 (데스크톱 지원)
+    function handleMouseDown(event, taskId) {
+        if (editingId === taskId) return;
+        handleTouchStart(event, taskId);
+    }
+
+    function handleMouseMove(event, taskId) {
+        if (swipingId === taskId && swipeStartX !== null) {
+            handleTouchMove(event, taskId);
+        }
+    }
+
+    function handleMouseUp(event, taskId) {
+        if (swipingId === taskId) {
+            handleTouchEnd(event, taskId);
+        }
+    }
+
+    function handleMouseLeave(event, taskId) {
+        // 마우스가 항목 밖으로 나갈 때 스와이프의 임계수치를 넘은 것으로 판단하여 선택/해제 처리
+        if (swipingId === taskId && swipeStartX !== null) {
+            const deltaX = swipeCurrentX - swipeStartX;
+            const threshold = 30; // 스와이프 임계값
+            
+            if (Math.abs(deltaX) > 10) { // 수평 이동이 있는 경우
+                if (deltaX < -threshold) {
+                    // 왼쪽으로 스와이프 - 선택
+                    if (!selectedIds.has(taskId)) {
+                        selectedIds.add(taskId);
+                        selectedIds = selectedIds; // Svelte 반응성 트리거
+                        console.log(`${selectedIds.size}개 선택됨`);
+                    }
+                } else if (deltaX > threshold) {
+                    // 오른쪽으로 스와이프 - 선택 해제
+                    if (selectedIds.has(taskId)) {
+                        selectedIds.delete(taskId);
+                        selectedIds = selectedIds; // Svelte 반응성 트리거
+                        console.log(`선택 해제됨 (현재 ${selectedIds.size}개 선택됨)`);
+                    }
+                }
+            }
+            
+            // 스와이프 상태 초기화
+            swipeStartX = null;
+            swipeStartY = null;
+            swipeCurrentX = null;
+            swipeCurrentY = null;
+            isSwiping = false;
+            swipingId = null;
+        }
+    }
+
+    // 선택 상태 관리 함수들
+    function isSelected(taskId) {
+        return selectedIds.has(taskId);
+    }
+
+    function getSelectedCount() {
+        return selectedIds.size;
+    }
+
+    function clearSelection() {
+        selectedIds.clear();
+        selectedIds = selectedIds; // Svelte 반응성 트리거
     }
 
     function startEdit(id, currentTitle) {
@@ -126,7 +268,20 @@
                 <li 
                     class:completed={task.isComplete} 
                     class:focus={task.category === 'Focus'}
+                    class:swiping={isSwiping && swipingId === task.id}
                     transition:fade={{ duration: 300 }}
+                    on:touchstart={(e) => handleTouchStart(e, task.id)}
+                    on:touchmove={(e) => handleTouchMove(e, task.id)}
+                    on:touchend={(e) => handleTouchEnd(e, task.id)}
+                    on:mousedown={(e) => handleMouseDown(e, task.id)}
+                    on:mousemove={(e) => handleMouseMove(e, task.id)}
+                    on:mouseup={(e) => handleMouseUp(e, task.id)}
+                    on:mouseleave={(e) => handleMouseLeave(e, task.id)}
+                    style={isSwiping && swipingId === task.id ? (() => {
+                        // 스와이프 중인 항목의 실시간 위치 업데이트
+                        const swipeX = swipeCurrentX - swipeStartX;
+                        return `transform: translateX(${swipeX}px)`;
+                    })() : ''}
                 >
                     <span class="index">{index + 1}.</span>
                     <span class="icon">{getCategoryIcon(task.category)}</span>
@@ -266,6 +421,17 @@
         border-bottom: 1px solid rgba(255,255,255,0.08); /* 목록 구분선 */
         position: relative;
         transition: background 0.2s;
+        cursor: grab;
+        user-select: none;
+        touch-action: pan-y; /* 수직 스크롤은 허용, 수평 스와이프는 커스텀 처리 */
+    }
+
+    li:active {
+        cursor: grabbing;
+    }
+
+    li.swiping {
+        transition: transform 0.1s ease-out; /* 스와이프 중 부드러운 전환 */
     }
 
     li:last-child { border-bottom: none; }
