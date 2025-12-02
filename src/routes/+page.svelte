@@ -32,5 +32,6 @@
         overflow: hidden;
         box-shadow: 0 20px 50px rgba(0,0,0,0.5);
         border: var(--glass-border);
+        /* transform이나 filter가 없어야 position: fixed가 viewport 기준으로 작동 */
     }
 </style>

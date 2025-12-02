@@ -3,6 +3,7 @@
     import { createEventDispatcher } from 'svelte';
     import { onDestroy } from 'svelte';
     import NewTaskInput from '$lib/components/NewTaskInput.svelte';
+    import SelectionBar from '$lib/components/SelectionBar.svelte';
     import { addTodo, completeTodo, deleteTodo, updateTodo, todos } from '$lib/stores/todoStore.js';
 
     let completedId = null;
@@ -200,13 +201,21 @@
         return selectedIds.has(taskId);
     }
 
-    function getSelectedCount() {
-        return selectedIds.size;
-    }
+    // 반응형 선택 개수
+    $: selectedCount = selectedIds.size;
 
     function clearSelection() {
         selectedIds.clear();
         selectedIds = selectedIds; // Svelte 반응성 트리거
+    }
+
+    function deleteSelected() {
+        // 선택된 모든 할 일 삭제
+        selectedIds.forEach(id => {
+            deleteTodo(id);
+        });
+        // 선택 해제
+        clearSelection();
     }
 
     function startEdit(id, currentTitle) {
@@ -251,6 +260,7 @@
     });
 </script>
 
+<div class="planning-screen-wrapper">
 <div class="planning-screen">
     <header>
         <h1>Planning Mode</h1>
@@ -269,6 +279,8 @@
                     class:completed={task.isComplete} 
                     class:focus={task.category === 'Focus'}
                     class:swiping={isSwiping && swipingId === task.id}
+                    class:selected={isSelected(task.id)}
+                    class:crushed={isSwiping && swipingId === task.id && Math.abs(swipeCurrentX - swipeStartX) > 30}
                     transition:fade={{ duration: 300 }}
                     on:touchstart={(e) => handleTouchStart(e, task.id)}
                     on:touchmove={(e) => handleTouchMove(e, task.id)}
@@ -278,11 +290,31 @@
                     on:mouseup={(e) => handleMouseUp(e, task.id)}
                     on:mouseleave={(e) => handleMouseLeave(e, task.id)}
                     style={isSwiping && swipingId === task.id ? (() => {
-                        // 스와이프 중인 항목의 실시간 위치 업데이트
+                        // 스와이프 중인 항목의 실시간 위치 업데이트 및 구겨진 효과
                         const swipeX = swipeCurrentX - swipeStartX;
-                        return `transform: translateX(${swipeX}px)`;
-                    })() : ''}
+                        const swipeAmount = Math.abs(swipeX);
+                        
+                        // 구겨진 효과 계산 (30px 이상일 때)
+                        if (swipeAmount > 30) {
+                            const crushIntensity = Math.min(swipeAmount / 100, 1); // 0~1 사이 값
+                            const crushScaleY = 1 - crushIntensity * 0.1; // 최대 10% 축소
+                            const crushScaleX = 1 - crushIntensity * 0.05; // 최대 5% 축소
+                            const crushSkew = crushIntensity * 3; // 최대 3deg
+                            
+                            return `transform: translateX(${swipeX}px) scaleY(${crushScaleY}) scaleX(${crushScaleX}) skewX(${crushSkew}deg)`;
+                        } else {
+                            return `transform: translateX(${swipeX}px)`;
+                        }
+                    })() : (isSelected(task.id) ? 'transform: translateX(-40px)' : '')}
                 >
+                    {#if isSelected(task.id)}
+                        <div class="delete-indicator">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </div>
+                    {/if}
                     <span class="index">{index + 1}.</span>
                     <span class="icon">{getCategoryIcon(task.category)}</span>
                     <div class="content">
@@ -358,7 +390,21 @@
     </div>
 </div>
 
+<!-- 선택 바 컴포넌트 -->
+<SelectionBar 
+    selectedCount={selectedCount} 
+    onDelete={deleteSelected}
+    onCancel={clearSelection}
+/>
+</div>
+
 <style>
+    .planning-screen-wrapper {
+        position: relative;
+        width: 100%;
+        height: 100%;
+    }
+
     .planning-screen {
         padding: 20px;
         height: 100%;
@@ -432,6 +478,23 @@
 
     li.swiping {
         transition: transform 0.1s ease-out; /* 스와이프 중 부드러운 전환 */
+    }
+
+    /* 구겨진 느낌 효과 - 스와이프 정도에 따라 */
+    li.crushed {
+        transform-origin: left center;
+        filter: brightness(0.85) contrast(1.1);
+        will-change: transform;
+        /* JavaScript로 계산된 값이 style 속성에 직접 적용됨 */
+    }
+
+    /* 선택된 할 일의 시각적 효과 */
+    li.selected {
+        opacity: 0.85;
+        background: rgba(255, 107, 157, 0.1);
+        border-right: 3px solid #ff6b9d;
+        transition: opacity 0.3s, background 0.3s;
+        /* transform은 style 속성에서 처리 */
     }
 
     li:last-child { border-bottom: none; }
@@ -592,6 +655,31 @@
 
     .delete-btn:active {
         transform: scale(0.95);
+    }
+
+    /* 선택된 할 일의 X 아이콘 */
+    .delete-indicator {
+        position: absolute;
+        right: -35px;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #ff6b9d;
+        text-shadow: 0 0 10px #ff6b9d;
+        animation: pulse-glow 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse-glow {
+        0%, 100% {
+            opacity: 0.8;
+            transform: scale(1);
+        }
+        50% {
+            opacity: 1;
+            transform: scale(1.1);
+        }
     }
 
     .circle {

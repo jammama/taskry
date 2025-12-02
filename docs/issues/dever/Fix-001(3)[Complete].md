@@ -72,6 +72,55 @@
 
 ---
 
+## 작업 완료 내역
+
+### 변경 사항
+- `src/lib/components/PlanningMode.svelte`: 선택된 할 일의 시각적 효과 구현
+
+### 주요 수정 사항
+1. **li 요소에 조건부 클래스 추가**
+   - `class:selected={isSelected(task.id)}` 추가
+   - 선택된 할 일에 `selected` 클래스가 자동으로 적용됨
+
+2. **X 아이콘 컴포넌트 추가**
+   - `{#if isSelected(task.id)}` 블록으로 조건부 렌더링
+   - SVG X 아이콘 (24x24px, stroke-width 2.5)
+   - 오른쪽에 배치 (`right: -35px`)
+
+3. **li.selected CSS 클래스 스타일 정의**
+   - `transform: translateX(-40px)`: 왼쪽으로 40px 이동
+   - `opacity: 0.85`: 투명도 감소로 비활성화된 느낌
+   - `background: rgba(255, 107, 157, 0.1)`: 핑크 배경 강조
+   - `border-right: 3px solid #ff6b9d`: 오른쪽 테두리 강조
+   - `transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)`: 부드러운 전환 효과
+
+4. **delete-indicator 스타일 및 펄스 애니메이션**
+   - `position: absolute`, `right: -35px`: 오른쪽에 배치
+   - `color: #ff6b9d`: 핑크 색상
+   - `text-shadow: 0 0 10px #ff6b9d`: 네온 글로우 효과
+   - `@keyframes pulse-glow`: 펄스 애니메이션 (1.5s, ease-in-out, infinite)
+     - 0%, 100%: opacity 0.8, scale(1)
+     - 50%: opacity 1, scale(1.1)
+
+### 테스트 결과
+- ✅ 선택된 할 일이 왼쪽으로 40px 이동 확인
+- ✅ 선택된 할 일의 오른쪽에 X 아이콘 표시 확인
+- ✅ 핑크 배경 및 오른쪽 테두리 강조 확인
+- ✅ 투명도 감소로 비활성화된 느낌 확인
+- ✅ 선택 시 부드러운 전환 효과 확인
+- ✅ X 아이콘 펄스 애니메이션 확인
+- ✅ 다크 모드 + 네온 테마 유지 확인
+
+### 코드 변경 내역
+- **추가된 코드**:
+  - `li` 요소에 `class:selected={isSelected(task.id)}` 조건부 클래스
+  - `{#if isSelected(task.id)}` 블록으로 X 아이콘 조건부 렌더링
+  - `.delete-indicator` 스타일 및 SVG X 아이콘
+  - `li.selected` CSS 클래스 스타일
+  - `@keyframes pulse-glow` 애니메이션
+
+---
+
 ## 개발 가이드
 
 ### 구현 순서
@@ -90,4 +139,5 @@
 ---
 
 **작성일**: 2024년 12월 1일  
-**마지막 업데이트**: 2024년 12월 1일
+**마지막 업데이트**: 2024년 12월 1일  
+**완료일**: 2024년 12월 1일
