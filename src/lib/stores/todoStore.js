@@ -123,3 +123,37 @@ export const deleteTodo = (id) => {
 
 	queueUpdate((currentTodos) => currentTodos.filter((todo) => todo.id !== id));
 };
+
+export const updateTodo = (id, newTitle) => {
+	if (!id || !newTitle) {
+		return;
+	}
+
+	const trimmedTitle = newTitle.trim();
+	if (!trimmedTitle) {
+		return;
+	}
+
+	// 제목이 변경된 경우에만 카테고리 재분류
+	queueUpdate((currentTodos) => {
+		const todoIndex = currentTodos.findIndex((todo) => todo.id === id);
+		if (todoIndex === -1) return currentTodos;
+
+		const currentTodo = currentTodos[todoIndex];
+		const { category, baseXP } = classifyTask(trimmedTitle);
+
+		// 제목이 변경되었거나 카테고리가 변경된 경우에만 업데이트
+		if (currentTodo.title !== trimmedTitle) {
+			const updatedTodos = [...currentTodos];
+			updatedTodos[todoIndex] = {
+				...currentTodo,
+				title: trimmedTitle,
+				category,
+				xp: baseXP
+			};
+			return updatedTodos;
+		}
+
+		return currentTodos;
+	});
+};

@@ -78,3 +78,4 @@
 - **수정된 코드**:
   - `toggleTask` 함수: todos store와 연동, 보상 팝업 자동 닫기 로직 추가
   - 템플릿: `tasks` → `$todos`, `task.completed` → `task.isComplete`, 카테고리별 태그 렌더링
+

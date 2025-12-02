@@ -3,10 +3,13 @@
     import { createEventDispatcher } from 'svelte';
     import { onDestroy } from 'svelte';
     import NewTaskInput from '$lib/components/NewTaskInput.svelte';
-    import { addTodo, completeTodo, deleteTodo, todos } from '$lib/stores/todoStore.js';
+    import { addTodo, completeTodo, deleteTodo, updateTodo, todos } from '$lib/stores/todoStore.js';
 
     let completedId = null;
     let rewardTimer = null;
+    let editingId = null;
+    let editingTitle = '';
+    let editInputElement = null;
     const dispatch = createEventDispatcher();
 
     // 카테고리별 아이콘 매핑 함수
@@ -64,6 +67,40 @@
         deleteTodo(id);
     }
 
+    function startEdit(id, currentTitle) {
+        editingId = id;
+        editingTitle = currentTitle;
+        // 다음 틱에서 입력 필드에 포커스
+        setTimeout(() => {
+            if (editInputElement) {
+                editInputElement.focus();
+                editInputElement.select();
+            }
+        }, 0);
+    }
+
+    function cancelEdit() {
+        editingId = null;
+        editingTitle = '';
+    }
+
+    function saveEdit(id) {
+        if (editingTitle.trim()) {
+            updateTodo(id, editingTitle.trim());
+        }
+        cancelEdit();
+    }
+
+    function handleEditKeydown(event, id) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            saveEdit(id);
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            cancelEdit();
+        }
+    }
+
     // 컴포넌트 언마운트 시 타이머 정리
     onDestroy(() => {
         if (rewardTimer) {
@@ -90,22 +127,48 @@
                     <span class="index">{index + 1}.</span>
                     <span class="icon">{getCategoryIcon(task.category)}</span>
                     <div class="content">
-                        <span class="title">{task.title}</span>
-                        {#if task.category === 'Focus'}
-                            <div class="tags">
-                                <span class="tag-focus">{task.category}</span>
-                                <span class="xp-badge">+{task.xp} XP</span>
+                        {#if editingId === task.id}
+                            <div class="edit-container">
+                                <input
+                                    type="text"
+                                    bind:value={editingTitle}
+                                    bind:this={editInputElement}
+                                    on:keydown={(e) => handleEditKeydown(e, task.id)}
+                                    on:blur={() => saveEdit(task.id)}
+                                    class="edit-input"
+                                />
+                                <div class="edit-actions">
+                                    <button class="edit-save-btn" on:click={() => saveEdit(task.id)} title="Save (Enter)">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <polyline points="20 6 9 17 4 12"></polyline>
+                                        </svg>
+                                    </button>
+                                    <button class="edit-cancel-btn" on:click={() => cancelEdit()} title="Cancel (ESC)">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
-                        {:else if task.category === 'Rhythm'}
-                            <div class="tags">
-                                <span class="tag-rhythm">{task.category}</span>
-                                <span class="xp-badge">+{task.xp} XP</span>
-                            </div>
-                        {:else if task.category === 'Catalyst'}
-                            <div class="tags">
-                                <span class="tag-catalyst">{task.category}</span>
-                                <span class="xp-badge">+{task.xp} XP</span>
-                            </div>
+                        {:else}
+                            <span class="title" on:dblclick={() => startEdit(task.id, task.title)}>{task.title}</span>
+                            {#if task.category === 'Focus'}
+                                <div class="tags">
+                                    <span class="tag-focus">{task.category}</span>
+                                    <span class="xp-badge">+{task.xp} XP</span>
+                                </div>
+                            {:else if task.category === 'Rhythm'}
+                                <div class="tags">
+                                    <span class="tag-rhythm">{task.category}</span>
+                                    <span class="xp-badge">+{task.xp} XP</span>
+                                </div>
+                            {:else if task.category === 'Catalyst'}
+                                <div class="tags">
+                                    <span class="tag-catalyst">{task.category}</span>
+                                    <span class="xp-badge">+{task.xp} XP</span>
+                                </div>
+                            {/if}
                         {/if}
                     </div>
 
@@ -206,7 +269,78 @@
     .index { width: 25px; color: var(--text-muted); font-size: 0.9rem; }
     .icon { margin-right: 12px; }
     .content { flex: 1; display: flex; flex-direction: column; }
-    .title { font-size: 0.95rem; transition: color 0.3s; }
+    .title { 
+        font-size: 0.95rem; 
+        transition: color 0.3s;
+        cursor: text;
+        user-select: none;
+    }
+
+    .title:hover {
+        color: var(--primary-cyan);
+    }
+
+    /* 편집 모드 스타일 */
+    .edit-container {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+    }
+
+    .edit-input {
+        flex: 1;
+        background: rgba(0, 240, 255, 0.1);
+        border: 1px solid var(--primary-cyan);
+        border-radius: 6px;
+        padding: 6px 10px;
+        color: var(--text-main);
+        font-size: 0.95rem;
+        outline: none;
+        box-shadow: 0 0 8px rgba(0, 240, 255, 0.3);
+    }
+
+    .edit-input:focus {
+        box-shadow: 0 0 12px rgba(0, 240, 255, 0.5);
+    }
+
+    .edit-actions {
+        display: flex;
+        gap: 4px;
+    }
+
+    .edit-save-btn,
+    .edit-cancel-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        transition: background 0.2s, transform 0.2s;
+    }
+
+    .edit-save-btn {
+        color: var(--primary-cyan);
+    }
+
+    .edit-save-btn:hover {
+        background: rgba(0, 240, 255, 0.2);
+        transform: scale(1.1);
+    }
+
+    .edit-cancel-btn {
+        color: var(--text-muted);
+    }
+
+    .edit-cancel-btn:hover {
+        background: rgba(255, 107, 157, 0.2);
+        color: #ff6b9d;
+        transform: scale(1.1);
+    }
 
     /* Tag 스타일 */
     .tags { font-size: 0.7rem; margin-top: 4px; display: flex; gap: 8px; align-items: center;}
