@@ -115,3 +115,11 @@ export const completeTodo = (id) => {
 		)
 	);
 };
+
+export const deleteTodo = (id) => {
+	if (!id) {
+		return;
+	}
+
+	queueUpdate((currentTodos) => currentTodos.filter((todo) => todo.id !== id));
+};

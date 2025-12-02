@@ -1,29 +1,75 @@
 <script>
     import { fly, fade } from 'svelte/transition';
-
-    let tasks = [
-        { id: 1, title: '2hr Strength Training', icon: '🏋️', completed: false },
-        { id: 2, title: 'Project Pitch Deck - Draft', icon: '🖊️', focus: true, fire: 2, completed: false },
-        { id: 3, title: 'Grocery Pitch Deck', icon: '🛒', completed: true }, // 예시로 완료된 상태
-        { id: 4, title: 'Grocery Shopping (Weekly)', icon: '🛒', completed: false },
-        { id: 5, title: '10min Meditation', icon: '🧘', completed: false },
-        { id: 6, title: 'Call with Mentor', icon: '📞', completed: false },
-    ];
+    import { createEventDispatcher } from 'svelte';
+    import { onDestroy } from 'svelte';
+    import NewTaskInput from '$lib/components/NewTaskInput.svelte';
+    import { addTodo, completeTodo, deleteTodo, todos } from '$lib/stores/todoStore.js';
 
     let completedId = null;
-    import { createEventDispatcher } from 'svelte';
+    let rewardTimer = null;
     const dispatch = createEventDispatcher();
 
-    function toggleTask(id) {
-        completedId = id;
-        // UI 업데이트
-        tasks = tasks.map(t => t.id === id ? {...t, completed: !t.completed} : t);
+    // 카테고리별 아이콘 매핑 함수
+    function getCategoryIcon(category) {
+        const iconMap = {
+            'Focus': '🎯',
+            'Rhythm': '🔄',
+            'Catalyst': '⚡'
+        };
+        return iconMap[category] || '📝';
+    }
 
-        // 부모 컴포넌트(App)에 알림 (보상 모드 진입용)
-        if (tasks.find(t => t.id === id).completed) {
+    function handleAddTask(title) {
+        addTodo(title);
+    }
+
+    function toggleTask(id) {
+        // 현재 할 일의 완료 상태 확인
+        const currentTodo = $todos.find(t => t.id === id);
+        if (!currentTodo) return;
+
+        const wasCompleted = currentTodo.isComplete;
+
+        // todoStore의 completeTodo 함수 호출 (상태 토글)
+        completeTodo(id);
+
+        // 완료 상태로 변경된 경우에만 보상 팝업 표시
+        if (!wasCompleted) {
+            completedId = id;
+
+            // 이전 타이머가 있으면 클리어
+            if (rewardTimer) {
+                clearTimeout(rewardTimer);
+            }
+
+            // 2.5초 후 보상 팝업 자동 닫기
+            rewardTimer = setTimeout(() => {
+                completedId = null;
+                rewardTimer = null;
+            }, 2500);
+
+            // 부모 컴포넌트(App)에 알림 (보상 모드 진입용)
             dispatch('complete');
+        } else {
+            // 완료 해제 시 보상 팝업 제거
+            completedId = null;
+            if (rewardTimer) {
+                clearTimeout(rewardTimer);
+                rewardTimer = null;
+            }
         }
     }
+
+    function handleDeleteTask(id) {
+        deleteTodo(id);
+    }
+
+    // 컴포넌트 언마운트 시 타이머 정리
+    onDestroy(() => {
+        if (rewardTimer) {
+            clearTimeout(rewardTimer);
+        }
+    });
 </script>
 
 <div class="planning-screen">
@@ -32,39 +78,58 @@
         <button class="menu-btn">☰</button>
     </header>
 
-    <div class="search-box">
-        <input type="text" placeholder="Add a new task... (AI-powered)" />
-        <span class="search-icon">🔍</span>
+    <div class="task-input-wrapper">
+        <NewTaskInput addTask={handleAddTask} />
     </div>
 
     <div class="task-list">
         <h3>Today Tasks</h3>
         <ul>
-            {#each tasks as task, index}
-                <li class:completed={task.completed} class:focus={task.focus}>
+            {#each $todos as task, index (task.id)}
+                <li class:completed={task.isComplete} class:focus={task.category === 'Focus'} transition:fade={{ duration: 300 }}>
                     <span class="index">{index + 1}.</span>
-                    <span class="icon">{task.icon}</span>
+                    <span class="icon">{getCategoryIcon(task.category)}</span>
                     <div class="content">
                         <span class="title">{task.title}</span>
-                        {#if task.focus}
+                        {#if task.category === 'Focus'}
                             <div class="tags">
-                                <span class="tag-focus">Focus</span>
-                                {#each Array(task.fire) as _}🔥{/each}
+                                <span class="tag-focus">{task.category}</span>
+                                <span class="xp-badge">+{task.xp} XP</span>
+                            </div>
+                        {:else if task.category === 'Rhythm'}
+                            <div class="tags">
+                                <span class="tag-rhythm">{task.category}</span>
+                                <span class="xp-badge">+{task.xp} XP</span>
+                            </div>
+                        {:else if task.category === 'Catalyst'}
+                            <div class="tags">
+                                <span class="tag-catalyst">{task.category}</span>
+                                <span class="xp-badge">+{task.xp} XP</span>
                             </div>
                         {/if}
                     </div>
 
-                    <button class="check-btn" on:click={() => toggleTask(task.id)}>
-                        {#if task.completed && completedId === task.id}
-                            <div class="reward-pop" in:fly="{{ y: 20, duration: 500 }}" out:fade>
+                    <div class="action-buttons">
+                        <button class="check-btn" on:click={() => toggleTask(task.id)}>
+                            {#if task.isComplete}
                                 <div class="check-icon">✓</div>
-                                <span>+20 FLOW ENERGY</span>
-                                <span class="particles">✨</span>
-                            </div>
-                        {:else}
-                            <div class="circle"></div>
-                        {/if}
-                    </button>
+                                {#if completedId === task.id}
+                                    <div class="reward-pop" in:fly="{{ y: 20, duration: 500 }}" out:fade>
+                                        <span>+{task.xp} XP</span>
+                                        <span class="particles">✨</span>
+                                    </div>
+                                {/if}
+                            {:else}
+                                <div class="circle"></div>
+                            {/if}
+                        </button>
+                        <button class="delete-btn" on:click={() => handleDeleteTask(task.id)} title="Delete task">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    </div>
                 </li>
             {/each}
         </ul>
@@ -110,31 +175,9 @@
         text-shadow: 0 0 5px var(--primary-cyan); /* 네온 효과 */
     }
 
-    /* 검색 입력창 스타일 */
-    .search-box {
-        position: relative;
-        padding: 10px 15px;
+    /* 할 일 입력창 래퍼 */
+    .task-input-wrapper {
         margin-top: 20px;
-        box-shadow: 0 0 10px rgba(0, 240, 255, 0.2); /* 입력창에 약한 글로우 */
-    }
-
-    .search-box input {
-        width: 90%;
-        background: transparent;
-        border: none;
-        padding: 5px 0;
-        color: var(--text-main);
-        font-size: 0.95rem;
-    }
-    .search-box input::placeholder { color: var(--text-muted); opacity: 0.8; }
-    .search-box input:focus { outline: none; }
-
-    .search-icon {
-        position: absolute;
-        right: 15px;
-        top: 50%;
-        transform: translateY(-50%);
-        color: var(--primary-cyan);
     }
 
     /* 할 일 목록 제목 */
@@ -165,7 +208,7 @@
     .content { flex: 1; display: flex; flex-direction: column; }
     .title { font-size: 0.95rem; transition: color 0.3s; }
 
-    /* Focus Tag 스타일 */
+    /* Tag 스타일 */
     .tags { font-size: 0.7rem; margin-top: 4px; display: flex; gap: 8px; align-items: center;}
     .tag-focus {
         color: var(--accent-gold);
@@ -176,6 +219,29 @@
         padding: 2px 6px;
         border-radius: 4px;
     }
+    .tag-rhythm {
+        color: var(--primary-cyan);
+        text-transform: uppercase;
+        font-weight: bold;
+        text-shadow: 0 0 3px rgba(0, 240, 255, 0.5);
+        background: rgba(0, 240, 255, 0.1);
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+    .tag-catalyst {
+        color: #ff6b9d;
+        text-transform: uppercase;
+        font-weight: bold;
+        text-shadow: 0 0 3px rgba(255, 107, 157, 0.5);
+        background: rgba(255, 107, 157, 0.1);
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+    .xp-badge {
+        color: var(--text-muted);
+        font-size: 0.65rem;
+        opacity: 0.8;
+    }
 
     /* 완료 상태 스타일 */
     li.completed .title {
@@ -184,10 +250,44 @@
         opacity: 0.6;
     }
 
+    /* 액션 버튼 컨테이너 */
+    .action-buttons {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
     /* 체크 버튼 */
     .check-btn {
         background: none; border: none; cursor: pointer; position: relative; width: 40px; height: 40px;
         display: flex; align-items: center; justify-content: center;
+    }
+
+    /* 삭제 버튼 */
+    .delete-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        opacity: 0.6;
+        transition: opacity 0.2s, color 0.2s, transform 0.2s;
+        border-radius: 4px;
+    }
+
+    .delete-btn:hover {
+        opacity: 1;
+        color: #ff6b9d;
+        background: rgba(255, 107, 157, 0.1);
+        transform: scale(1.1);
+    }
+
+    .delete-btn:active {
+        transform: scale(0.95);
     }
 
     .circle {
@@ -197,7 +297,7 @@
         transition: border-color 0.3s;
     }
 
-    /* 보상 팝업 효과 (기존 코드 유지) */
+    /* 보상 팝업 효과 (별도 레이어로 표시) */
     .reward-pop {
         position: absolute;
         right: 10px;
@@ -208,6 +308,7 @@
         border-radius: 8px;
         display: flex;
         align-items: center;
+        gap: 8px;
         box-shadow: 0 0 15px var(--primary-cyan);
         z-index: 10;
         pointer-events: none;
@@ -216,9 +317,15 @@
     }
 
     .check-icon {
-        font-size: 1.2rem; color: var(--primary-cyan); font-weight: bold;
+        font-size: 1.2rem; 
+        color: var(--primary-cyan); 
+        font-weight: bold;
         text-shadow: 0 0 10px var(--primary-cyan);
-        margin-right: 5px;
+        width: 18px;
+        height: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 
     .reward-pop span { color: white; margin-top: 0; font-weight: bold; }

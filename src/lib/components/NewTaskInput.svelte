@@ -16,10 +16,10 @@
            placeholder="Add a new task... (AI-powered)"
            class="real-input" />
 
-    <button type="submit" class="search-btn">
+    <button type="submit" class="add-btn">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
         </svg>
     </button>
 </form>
@@ -28,43 +28,53 @@
     .input-container {
         display: flex;
         align-items: center;
-        background-color: var(--surface-card);
-        border: 1px solid var(--border-dim);
-        border-radius: 12px;
-        padding: 5px 15px;
-        margin-bottom: 30px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        background: var(--card-bg);
+        backdrop-filter: blur(8px);
+        border: var(--glass-border);
+        border-radius: 15px;
+        padding: 10px 15px;
+        margin-bottom: 20px;
+        box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
+        transition: box-shadow 0.3s;
     }
 
     .input-container:focus-within {
-        border-color: var(--accent-blue);
-        box-shadow: 0 0 10px rgba(0, 240, 255, 0.1);
+        border-color: var(--primary-cyan);
+        box-shadow: 0 0 15px rgba(0, 240, 255, 0.4);
     }
 
     .real-input {
         flex: 1;
         background: transparent;
         border: none;
-        color: white;
-        padding: 12px 0;
+        color: var(--text-main);
+        padding: 5px 0;
         font-size: 0.95rem;
         outline: none;
     }
 
     .real-input::placeholder {
-        color: #4a4a5a;
+        color: var(--text-muted);
+        opacity: 0.8;
     }
 
-    .search-btn {
+    .add-btn {
         background: none;
         border: none;
-        color: var(--text-sub);
+        color: var(--primary-cyan, var(--text-sub));
         display: flex;
         align-items: center;
         justify-content: center;
+        cursor: pointer;
+        transition: color 0.2s, transform 0.2s;
     }
 
-    .search-btn:hover {
-        color: var(--text-main);
+    .add-btn:hover {
+        color: var(--primary-cyan, var(--text-main));
+        transform: scale(1.1);
+    }
+
+    .add-btn:active {
+        transform: scale(0.95);
     }
 </style>
