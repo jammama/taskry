@@ -21,17 +21,13 @@
     // 선택 상태 관리
     let selectedIds = new Set();
     const dispatch = createEventDispatcher();
-    
-    // 더블탭 감지를 위한 변수
-    let lastTapTime = new Map(); // taskId -> 마지막 탭 시간
-    const DOUBLE_TAP_DELAY = 300; // 더블탭 감지 시간 (ms)
 
     // 카테고리별 아이콘 매핑 함수
     function getCategoryIcon(category) {
         const iconMap = {
-            'Focus': '🎯',
-            'Rhythm': '🔄',
-            'Catalyst': '⚡'
+            'Focus': 'target', // SVG 아이콘으로 대체
+            'Rhythm': 'refresh', // SVG 아이콘으로 대체
+            'Catalyst': 'zap' // SVG 아이콘으로 대체
         };
         return iconMap[category] || '📝';
     }
@@ -136,26 +132,6 @@
                     selectedIds = selectedIds; // Svelte 반응성 트리거
                     console.log(`선택 해제됨 (현재 ${selectedIds.size}개 선택됨)`);
                 }
-            }
-        } else {
-            // 스와이프가 아닌 경우 더블탭 체크
-            const currentTime = Date.now();
-            const lastTime = lastTapTime.get(taskId);
-            
-            if (lastTime && (currentTime - lastTime) < DOUBLE_TAP_DELAY) {
-                // 더블탭 감지 - 편집 모드 진입
-                const task = $todos.find(t => t.id === taskId);
-                if (task && !task.isComplete) {
-                    startEdit(taskId, task.title);
-                }
-                lastTapTime.delete(taskId); // 더블탭 처리 후 초기화
-            } else {
-                // 첫 번째 탭 - 시간 저장
-                lastTapTime.set(taskId, currentTime);
-                // 일정 시간 후 자동 초기화 (더블탭 시간 초과 시)
-                setTimeout(() => {
-                    lastTapTime.delete(taskId);
-                }, DOUBLE_TAP_DELAY);
             }
         }
         
@@ -334,7 +310,65 @@
                     })()}
                 >
                     <span class="index">{index + 1}.</span>
-                    <span class="icon">{getCategoryIcon(task.category)}</span>
+                    <span class="icon">
+                        {#if getCategoryIcon(task.category) === 'target'}
+                            <!-- 타겟 아이콘 SVG - design.png 스타일 -->
+                            <svg 
+                                width="18" 
+                                height="18" 
+                                viewBox="0 0 24 24" 
+                                fill="none" 
+                                stroke="currentColor" 
+                                stroke-width="1.5" 
+                                stroke-linecap="round" 
+                                stroke-linejoin="round"
+                                class="category-icon"
+                            >
+                                <!-- 외부 원 -->
+                                <circle cx="12" cy="12" r="9" />
+                                <!-- 내부 원 -->
+                                <circle cx="12" cy="12" r="5" />
+                                <!-- 중심 점 -->
+                                <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+                            </svg>
+                        {:else if getCategoryIcon(task.category) === 'refresh'}
+                            <!-- 리프레시 아이콘 SVG - design.png 스타일 -->
+                            <svg 
+                                width="18" 
+                                height="18" 
+                                viewBox="0 0 24 24" 
+                                fill="none" 
+                                stroke="currentColor" 
+                                stroke-width="1.5" 
+                                stroke-linecap="round" 
+                                stroke-linejoin="round"
+                                class="category-icon"
+                            >
+                                <!-- 회전 화살표 -->
+                                <polyline points="23 4 23 10 17 10"></polyline>
+                                <polyline points="1 20 1 14 7 14"></polyline>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                            </svg>
+                        {:else if getCategoryIcon(task.category) === 'zap'}
+                            <!-- 번개 아이콘 SVG - design.png 스타일 -->
+                            <svg 
+                                width="18" 
+                                height="18" 
+                                viewBox="0 0 24 24" 
+                                fill="none" 
+                                stroke="currentColor" 
+                                stroke-width="1.5" 
+                                stroke-linecap="round" 
+                                stroke-linejoin="round"
+                                class="category-icon"
+                            >
+                                <!-- 번개 모양 -->
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                            </svg>
+                        {:else}
+                            {getCategoryIcon(task.category)}
+                        {/if}
+                    </span>
                     <div class="content">
                         {#if editingId === task.id}
                             <div class="edit-container">
@@ -362,25 +396,11 @@
                             </div>
                         {:else}
                             <span class="title" on:dblclick={() => startEdit(task.id, task.title)}>{task.title}</span>
-                            {#if task.category === 'Focus'}
-                                <div class="tags">
-                                    <span class="tag-focus">{task.category}</span>
-                                    <span class="xp-badge">+{task.xp} XP</span>
-                                </div>
-                            {:else if task.category === 'Rhythm'}
-                                <div class="tags">
-                                    <span class="tag-rhythm">{task.category}</span>
-                                    <span class="xp-badge">+{task.xp} XP</span>
-                                </div>
-                            {:else if task.category === 'Catalyst'}
-                                <div class="tags">
-                                    <span class="tag-catalyst">{task.category}</span>
-                                    <span class="xp-badge">+{task.xp} XP</span>
-                                </div>
-                            {/if}
                         {/if}
                     </div>
-
+                    {#if task.category}
+                        <span class="tag">{task.category}</span>
+                    {/if}
                     <div class="action-buttons">
                         <button class="check-btn" on:click={() => toggleTask(task.id)}>
                             {#if task.isComplete}
@@ -475,7 +495,7 @@
     li {
         display: flex;
         align-items: center;
-        padding: 12px 0;
+        padding: 8px 0; /* 높이 줄이기: 12px → 8px */
         border-bottom: 1px solid rgba(255,255,255,0.08); /* 목록 구분선 */
         position: relative;
         transition: background 0.2s;
@@ -562,7 +582,20 @@
     li:last-child { border-bottom: none; }
 
     .index { width: 25px; color: var(--text-muted); font-size: 0.9rem; }
-    .icon { margin-right: 12px; }
+    .icon { 
+        margin-right: 8px; 
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    } /* 아이콘과 숫자 간격 줄이기: 12px → 8px */
+    
+    /* 카테고리 아이콘 스타일 - design.png와 동일한 모노크롬 스타일 */
+    .category-icon {
+        color: var(--text-main);
+        width: 18px;
+        height: 18px;
+        opacity: 0.9;
+    }
     .content { flex: 1; display: flex; flex-direction: column; }
     .title { 
         font-size: 0.95rem; 
@@ -637,39 +670,15 @@
         transform: scale(1.1);
     }
 
-    /* Tag 스타일 */
-    .tags { font-size: 0.7rem; margin-top: 4px; display: flex; gap: 8px; align-items: center;}
-    .tag-focus {
-        color: var(--accent-gold);
-        text-transform: uppercase;
-        font-weight: bold;
-        text-shadow: 0 0 3px rgba(255, 215, 0, 0.5); /* 골드 글로우 */
-        background: rgba(255, 215, 0, 0.1);
-        padding: 2px 6px;
-        border-radius: 4px;
-    }
-    .tag-rhythm {
-        color: var(--primary-cyan);
-        text-transform: uppercase;
-        font-weight: bold;
-        text-shadow: 0 0 3px rgba(0, 240, 255, 0.5);
-        background: rgba(0, 240, 255, 0.1);
-        padding: 2px 6px;
-        border-radius: 4px;
-    }
-    .tag-catalyst {
-        color: #ff6b9d;
-        text-transform: uppercase;
-        font-weight: bold;
-        text-shadow: 0 0 3px rgba(255, 107, 157, 0.5);
-        background: rgba(255, 107, 157, 0.1);
-        padding: 2px 6px;
-        border-radius: 4px;
-    }
-    .xp-badge {
+    /* Tag 스타일 - 배경 없음, 미묘한 회색 톤, 제목 오른쪽 배치 */
+    .tag {
         color: var(--text-muted);
-        font-size: 0.65rem;
-        opacity: 0.8;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        font-weight: normal;
+        opacity: 0.7;
+        margin-right: 8px; /* 태그와 완료 버튼 사이 간격 */
+        /* 배경 색상 완전 제거 */
     }
 
     /* 완료 상태 스타일 */
@@ -686,9 +695,9 @@
         gap: 8px;
     }
 
-    /* 체크 버튼 */
+    /* 체크 버튼 - 크기 줄이기 */
     .check-btn {
-        background: none; border: none; cursor: pointer; position: relative; width: 40px; height: 40px;
+        background: none; border: none; cursor: pointer; position: relative; width: 32px; height: 32px; /* 40px → 32px */
         display: flex; align-items: center; justify-content: center;
     }
 
@@ -703,8 +712,9 @@
         }
     }
 
+    /* 체크 아이콘과 원형 아이콘 크기 조정 */
     .circle {
-        width: 18px; height: 18px;
+        width: 16px; height: 16px; /* 18px → 16px */
         border: 2px solid var(--text-muted);
         border-radius: 50%;
         transition: border-color 0.3s;
@@ -730,12 +740,12 @@
     }
 
     .check-icon {
-        font-size: 1.2rem; 
+        font-size: 1rem; /* 1.2rem → 1rem */
         color: var(--primary-cyan); 
         font-weight: bold;
         text-shadow: 0 0 10px var(--primary-cyan);
-        width: 18px;
-        height: 18px;
+        width: 16px; /* 18px → 16px */
+        height: 16px; /* 18px → 16px */
         display: flex;
         align-items: center;
         justify-content: center;
