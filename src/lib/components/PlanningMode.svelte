@@ -21,6 +21,10 @@
     // 선택 상태 관리
     let selectedIds = new Set();
     const dispatch = createEventDispatcher();
+    
+    // 더블탭 감지를 위한 변수
+    let lastTapTime = new Map(); // taskId -> 마지막 탭 시간
+    const DOUBLE_TAP_DELAY = 300; // 더블탭 감지 시간 (ms)
 
     // 카테고리별 아이콘 매핑 함수
     function getCategoryIcon(category) {
@@ -132,6 +136,26 @@
                     selectedIds = selectedIds; // Svelte 반응성 트리거
                     console.log(`선택 해제됨 (현재 ${selectedIds.size}개 선택됨)`);
                 }
+            }
+        } else {
+            // 스와이프가 아닌 경우 더블탭 체크
+            const currentTime = Date.now();
+            const lastTime = lastTapTime.get(taskId);
+            
+            if (lastTime && (currentTime - lastTime) < DOUBLE_TAP_DELAY) {
+                // 더블탭 감지 - 편집 모드 진입
+                const task = $todos.find(t => t.id === taskId);
+                if (task && !task.isComplete) {
+                    startEdit(taskId, task.title);
+                }
+                lastTapTime.delete(taskId); // 더블탭 처리 후 초기화
+            } else {
+                // 첫 번째 탭 - 시간 저장
+                lastTapTime.set(taskId, currentTime);
+                // 일정 시간 후 자동 초기화 (더블탭 시간 초과 시)
+                setTimeout(() => {
+                    lastTapTime.delete(taskId);
+                }, DOUBLE_TAP_DELAY);
             }
         }
         
@@ -280,7 +304,7 @@
                     class:focus={task.category === 'Focus'}
                     class:swiping={isSwiping && swipingId === task.id}
                     class:selected={isSelected(task.id)}
-                    class:crushed={isSwiping && swipingId === task.id && Math.abs(swipeCurrentX - swipeStartX) > 30}
+                    class:clipped={isSwiping && swipingId === task.id && swipeCurrentX - swipeStartX < 0 || isSelected(task.id)}
                     transition:fade={{ duration: 300 }}
                     on:touchstart={(e) => handleTouchStart(e, task.id)}
                     on:touchmove={(e) => handleTouchMove(e, task.id)}
@@ -289,32 +313,26 @@
                     on:mousemove={(e) => handleMouseMove(e, task.id)}
                     on:mouseup={(e) => handleMouseUp(e, task.id)}
                     on:mouseleave={(e) => handleMouseLeave(e, task.id)}
-                    style={isSwiping && swipingId === task.id ? (() => {
-                        // 스와이프 중인 항목의 실시간 위치 업데이트 및 구겨진 효과
-                        const swipeX = swipeCurrentX - swipeStartX;
-                        const swipeAmount = Math.abs(swipeX);
-                        
-                        // 구겨진 효과 계산 (30px 이상일 때)
-                        if (swipeAmount > 30) {
-                            const crushIntensity = Math.min(swipeAmount / 100, 1); // 0~1 사이 값
-                            const crushScaleY = 1 - crushIntensity * 0.1; // 최대 10% 축소
-                            const crushScaleX = 1 - crushIntensity * 0.05; // 최대 5% 축소
-                            const crushSkew = crushIntensity * 3; // 최대 3deg
+                    style={(() => {
+                        if (isSwiping && swipingId === task.id) {
+                            // 스와이프 중인 항목의 실시간 위치 업데이트 및 잘려나간 효과
+                            const swipeX = swipeCurrentX - swipeStartX;
+                            const swipeAmount = Math.abs(swipeX);
                             
-                            return `transform: translateX(${swipeX}px) scaleY(${crushScaleY}) scaleX(${crushScaleX}) skewX(${crushSkew}deg)`;
-                        } else {
-                            return `transform: translateX(${swipeX}px)`;
+                            // 왼쪽으로 스와이프한 경우 clip-path 적용
+                            if (swipeX < 0) {
+                                const clipLeft = Math.min(swipeAmount, 100); // 최대 100px까지
+                                return `transform: translateX(${swipeX}px); clip-path: inset(0 0 0 ${clipLeft}px);`;
+                            } else {
+                                return `transform: translateX(${swipeX}px);`;
+                            }
+                        } else if (isSelected(task.id)) {
+                            // 선택된 할 일: -40px만큼 왼쪽 부분이 짧아지는 효과 (영역 밖으로 나가 잘린 느낌)
+                            return `transform: translateX(-40px); clip-path: inset(0 0 0 40px);`;
                         }
-                    })() : (isSelected(task.id) ? 'transform: translateX(-40px)' : '')}
+                        return '';
+                    })()}
                 >
-                    {#if isSelected(task.id)}
-                        <div class="delete-indicator">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <line x1="18" y1="6" x2="6" y2="18"></line>
-                                <line x1="6" y1="6" x2="18" y2="18"></line>
-                            </svg>
-                        </div>
-                    {/if}
                     <span class="index">{index + 1}.</span>
                     <span class="icon">{getCategoryIcon(task.category)}</span>
                     <div class="content">
@@ -376,12 +394,6 @@
                             {:else}
                                 <div class="circle"></div>
                             {/if}
-                        </button>
-                        <button class="delete-btn" on:click={() => handleDeleteTask(task.id)} title="Delete task">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <line x1="18" y1="6" x2="6" y2="18"></line>
-                                <line x1="6" y1="6" x2="18" y2="18"></line>
-                            </svg>
                         </button>
                     </div>
                 </li>
@@ -480,21 +492,71 @@
         transition: transform 0.1s ease-out; /* 스와이프 중 부드러운 전환 */
     }
 
-    /* 구겨진 느낌 효과 - 스와이프 정도에 따라 */
-    li.crushed {
-        transform-origin: left center;
-        filter: brightness(0.85) contrast(1.1);
-        will-change: transform;
-        /* JavaScript로 계산된 값이 style 속성에 직접 적용됨 */
-    }
-
-    /* 선택된 할 일의 시각적 효과 */
+    /* 선택된 할 일의 시각적 효과 - 영역 밖으로 나가 잘린 느낌 */
     li.selected {
+        overflow: hidden; /* 왼쪽 부분이 잘리도록 */
         opacity: 0.85;
         background: rgba(255, 107, 157, 0.1);
         border-right: 3px solid #ff6b9d;
-        transition: opacity 0.3s, background 0.3s;
-        /* transform은 style 속성에서 처리 */
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s, background 0.3s, clip-path 0.3s;
+        /* transform과 clip-path는 style 속성에서 처리 */
+    }
+    
+    /* 잘려나간 왼쪽 부분에 네온 글로우 효과 */
+    li.clipped {
+        position: relative;
+    }
+    
+    li.clipped::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background: linear-gradient(to right, 
+            rgba(255, 107, 157, 0) 0%,
+            rgba(255, 107, 157, 1) 50%,
+            rgba(255, 107, 157, 0) 100%
+        );
+        /* 효과 범위를 크게 늘려서 잘린 부분 밖에서도 보이도록 */
+        box-shadow: 
+            0 0 20px rgba(255, 107, 157, 1),
+            0 0 40px rgba(255, 107, 157, 0.9),
+            0 0 60px rgba(255, 107, 157, 0.7),
+            0 0 80px rgba(255, 107, 157, 0.5),
+            -10px 0 30px rgba(255, 107, 157, 0.6),
+            -20px 0 50px rgba(255, 107, 157, 0.4),
+            -30px 0 70px rgba(255, 107, 157, 0.3);
+        z-index: 1;
+        pointer-events: none;
+        animation: glow-pulse 2s ease-in-out infinite;
+    }
+    
+    /* 네온 글로우 펄스 애니메이션 */
+    @keyframes glow-pulse {
+        0%, 100% {
+            opacity: 0.9;
+            box-shadow: 
+                0 0 20px rgba(255, 107, 157, 1),
+                0 0 40px rgba(255, 107, 157, 0.9),
+                0 0 60px rgba(255, 107, 157, 0.7),
+                0 0 80px rgba(255, 107, 157, 0.5),
+                -10px 0 30px rgba(255, 107, 157, 0.6),
+                -20px 0 50px rgba(255, 107, 157, 0.4),
+                -30px 0 70px rgba(255, 107, 157, 0.3);
+        }
+        50% {
+            opacity: 1;
+            box-shadow: 
+                0 0 30px rgba(255, 107, 157, 1),
+                0 0 60px rgba(255, 107, 157, 1),
+                0 0 90px rgba(255, 107, 157, 0.8),
+                0 0 120px rgba(255, 107, 157, 0.6),
+                -15px 0 50px rgba(255, 107, 157, 0.8),
+                -30px 0 80px rgba(255, 107, 157, 0.6),
+                -45px 0 110px rgba(255, 107, 157, 0.4);
+        }
     }
 
     li:last-child { border-bottom: none; }
@@ -628,47 +690,6 @@
     .check-btn {
         background: none; border: none; cursor: pointer; position: relative; width: 40px; height: 40px;
         display: flex; align-items: center; justify-content: center;
-    }
-
-    /* 삭제 버튼 */
-    .delete-btn {
-        background: none;
-        border: none;
-        cursor: pointer;
-        width: 32px;
-        height: 32px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--text-muted);
-        opacity: 0.6;
-        transition: opacity 0.2s, color 0.2s, transform 0.2s;
-        border-radius: 4px;
-    }
-
-    .delete-btn:hover {
-        opacity: 1;
-        color: #ff6b9d;
-        background: rgba(255, 107, 157, 0.1);
-        transform: scale(1.1);
-    }
-
-    .delete-btn:active {
-        transform: scale(0.95);
-    }
-
-    /* 선택된 할 일의 X 아이콘 */
-    .delete-indicator {
-        position: absolute;
-        right: -35px;
-        width: 30px;
-        height: 30px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #ff6b9d;
-        text-shadow: 0 0 10px #ff6b9d;
-        animation: pulse-glow 1.5s ease-in-out infinite;
     }
 
     @keyframes pulse-glow {

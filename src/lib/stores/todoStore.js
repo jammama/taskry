@@ -93,15 +93,15 @@ export const addTodo = (title) => {
 	const { category, baseXP } = classifyTask(trimmedTitle);
 
 	queueUpdate((currentTodos) => [
-		...currentTodos,
-		{
-			id: uid(10),
+        ...currentTodos,
+        {
+            id: uid(10),
 			title: trimmedTitle,
-			isComplete: false,
+            isComplete: false,
 			category,
 			xp: baseXP
-		}
-	]);
+        }
+    ]);
 };
 
 export const completeTodo = (id) => {
@@ -152,8 +152,8 @@ export const updateTodo = (id, newTitle) => {
 				xp: baseXP
 			};
 			return updatedTodos;
-		}
+        }
 
-		return currentTodos;
-	});
+        return currentTodos;
+    });
 };
