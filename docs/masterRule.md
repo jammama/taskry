@@ -5,7 +5,7 @@
 
 슬로건: "Your Personal Flow Engine" (나만의 몰입 엔진)
 
-MVP 목표: Planning Mode (할 일 입력 및 관리) 및 Micro Reward (즉각 보상) 시스템의 완벽한 구현.
+MVP 목표: Planning Mode (할 일 입력 및 관리), Micro Reward (즉각 보상), Macro Reward (지연 보상) 시스템의 완벽한 구현.
 
 핵심 철학: Gamification을 통해 To-Do List의 지속적인 사용 동기를 부여하고, 성장 엔진 테마를 통해 사용자의 자기계발을 시각화합니다.
 

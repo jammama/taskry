@@ -19,18 +19,17 @@
 
 UX 요구사항 (Juicy UI):
 
-- 체크박스: 완료 시 Bounce, Scale, Glow 효과를 동반한 화려한 애니메이션 필수.
+- 체크박스: 완료 시 Bounce, Scale, Glow 효과를 동반한 화려한 애니메이션 필수 (0.5~1초 짧은 이펙트).
+- Micro Reward 팝업: 화면 중앙에서 부드럽게 등장하며 네온 빛이 감도는 디자인, 자동 닫기 2.5초.
+- Macro Reward 팝업: 지연 시간 표시 (NEXT EVOLUTION IN 3 DAYS), 화려한 개봉 애니메이션.
 
-- 팝업: Micro Reward 팝업은 화면 중앙에서 부드럽게 등장하며 네온 빛이 감도는 디자인을 유지해야 합니다.
+2. 레이아웃 및 모드 분리
 
+Planning Mode (효율 우선):
+- 모바일 최적화: max-width: 420px의 단일 열 모바일 앱 레이아웃.
+- 구성 요소: 헤더, 입력창 (NewTaskInput.svelte), To-Do 리스트 (TodoItem.svelte).
+- 목표: 간결하고 빠른 입력 (0.5초 목표), 완료 시 짧은 이펙트만.
 
-2. 레이아웃 (Planning Mode)
-- 모바일 최적화: max-width: 420px의 단일 열 모바일 앱 레이아웃을 따릅니다.
-
-구성 요소:
-
-- 헤더: Planning Mode 타이틀 및 메뉴 아이콘.
-
-- 입력창: AI 분석을 암시하는 돋보기 아이콘과 심플한 단일 입력 필드 (NewTaskInput.svelte).
-
-- To-Do 리스트: 카테고리 아이콘과 함께 깔끔하게 세로로 나열 (컴포넌트: TodoItem.svelte).
+Reward Mode (몰입 우선):
+- 엔진 시각화, 보상 개봉, AI 스토리텔링.
+- 진입: 투두 화면 상단 알림 또는 일정 시간 간격 푸시 알림.
