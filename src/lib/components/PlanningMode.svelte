@@ -34,21 +34,20 @@
         .filter(task => task.isComplete)
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     
-    // 드래그앤드롭을 위한 로컬 상태 (각 섹션별로 독립적)
+    // 드래그앤드롭을 위한 로컬 상태 (진행 중인 할 일만)
     let activeTodosList = [];
-    let completedTodosList = [];
     
     // 드래그 중인지 추적하는 플래그 (반응형 문이 드래그 중 로컬 리스트를 덮어쓰지 않도록)
     let isDraggingActive = false;
-    let isDraggingCompleted = false;
+    // 수평 스와이프 중인지 추적 (드래그앤드롭과 충돌 방지)
+    let isHorizontalSwiping = false;
+    // 드래그 방향 감지를 위한 초기 이동 거리
+    let initialDragDirection = null; // 'horizontal' | 'vertical' | null
     
-    // activeTodos와 completedTodos가 변경될 때 로컬 리스트 업데이트
+    // activeTodos가 변경될 때 로컬 리스트 업데이트
     // 단, 드래그 중이 아닐 때만 업데이트 (드래그 프리뷰 상태 보호)
-    $: if (activeTodos.length >= 0 && !isDraggingActive) {
+    $: if (!isDraggingActive) {
         activeTodosList = activeTodos;
-    }
-    $: if (completedTodos.length >= 0 && !isDraggingCompleted) {
-        completedTodosList = completedTodos;
     }
     
     // 진행 중인 할 일 드래그앤드롭 핸들러
@@ -72,28 +71,6 @@
         // 반응형 문이 다음 업데이트에서 동기화할 수 있도록
     }
     
-    // 완료된 할 일 드래그앤드롭 핸들러
-    function handleCompletedConsider(e) {
-        isDraggingCompleted = true;
-        completedTodosList = e.detail.items;
-    }
-    
-    function handleCompletedFinalize(e) {
-        isDraggingCompleted = false;
-        if (e.detail.items !== completedTodosList) {
-            completedTodosList = e.detail.items;
-            // 순서 업데이트: completedTodos의 id만 전달
-            // 완료된 할 일은 activeTodos 다음 순서로 시작
-            const activeCount = activeTodos.length;
-            const newOrder = completedTodosList.map((item, index) => ({
-                id: item.id,
-                order: activeCount + index
-            }));
-            reorderTodos(newOrder);
-        }
-        // 스토어 업데이트 후 로컬 리스트 동기화를 위해 플래그 해제
-        // 반응형 문이 다음 업데이트에서 동기화할 수 있도록
-    }
     
     // 완료된 할 일 섹션 접기/펴기 토글
     async function toggleCompletedSection() {
@@ -173,6 +150,9 @@
         swipeCurrentY = swipeStartY;
         isSwiping = false;
         swipingId = taskId;
+        // 드래그 방향 감지 초기화
+        initialDragDirection = null;
+        isHorizontalSwiping = false;
     }
 
     function handleTouchMove(event, taskId) {
@@ -185,11 +165,31 @@
         
         const deltaX = swipeCurrentX - swipeStartX;
         const deltaY = Math.abs(swipeCurrentY - swipeStartY);
+        const absDeltaX = Math.abs(deltaX);
         
-        // 수평 스와이프가 수직 스와이프보다 큰 경우 (수평 스와이프 감지)
-        if (Math.abs(deltaX) > 10 && Math.abs(deltaX) > deltaY) {
+        // 초기 방향 감지 (5px 이상 이동 시)
+        if (initialDragDirection === null && (absDeltaX > 5 || deltaY > 5)) {
+            if (absDeltaX > deltaY) {
+                // 수평 방향 감지 - 드래그앤드롭 즉시 비활성화
+                initialDragDirection = 'horizontal';
+                isHorizontalSwiping = true;
+                isSwiping = true;
+                event.preventDefault();
+                event.stopPropagation(); // 드래그앤드롭 이벤트 전파 차단
+                return;
+            } else if (deltaY > absDeltaX) {
+                // 수직 방향 감지 - 드래그앤드롭 허용
+                initialDragDirection = 'vertical';
+                isHorizontalSwiping = false;
+            }
+        }
+        
+        // 이미 수평 방향으로 감지된 경우
+        if (initialDragDirection === 'horizontal') {
             isSwiping = true;
+            isHorizontalSwiping = true;
             event.preventDefault(); // 스크롤 방지
+            event.stopPropagation(); // 드래그앤드롭 이벤트 전파 차단
         }
     }
 
@@ -225,6 +225,8 @@
         swipeCurrentX = null;
         swipeCurrentY = null;
         isSwiping = false;
+        isHorizontalSwiping = false; // 수평 스와이프 종료
+        initialDragDirection = null; // 방향 감지 초기화
         swipingId = null;
     }
 
@@ -237,6 +239,11 @@
     function handleMouseMove(event, taskId) {
         if (swipingId === taskId && swipeStartX !== null) {
             handleTouchMove(event, taskId);
+            // 수평 스와이프 중이면 드래그앤드롭 이벤트 차단
+            if (isHorizontalSwiping) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
         }
     }
 
@@ -276,6 +283,8 @@
             swipeCurrentX = null;
             swipeCurrentY = null;
             isSwiping = false;
+            isHorizontalSwiping = false; // 수평 스와이프 종료
+            initialDragDirection = null; // 방향 감지 초기화
             swipingId = null;
         }
     }
@@ -361,7 +370,7 @@
             use:dndzone={{ 
                 items: activeTodosList,
                 flipDurationMs: 200,
-                dragDisabled: false,
+                dragDisabled: isHorizontalSwiping, // 수평 스와이프 중에는 드래그앤드롭 비활성화
                 morphDisabled: false,
                 dragTransitionOptions: { duration: 200, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' }
             }}
@@ -374,7 +383,6 @@
                     class:focus={task.category === 'Focus'}
                     class:swiping={isSwiping && swipingId === task.id}
                     class:selected={isSelected(task.id)}
-                    class:clipped={isSwiping && swipingId === task.id && swipeCurrentX - swipeStartX < 0 || isSelected(task.id)}
                     transition:fade={{ duration: 300 }}
                     on:touchstart={(e) => handleTouchStart(e, task.id)}
                     on:touchmove={(e) => handleTouchMove(e, task.id)}
@@ -385,20 +393,13 @@
                     on:mouseleave={(e) => handleMouseLeave(e, task.id)}
                     style={(() => {
                         if (isSwiping && swipingId === task.id) {
-                            // 스와이프 중인 항목의 실시간 위치 업데이트 및 잘려나간 효과
+                            // 스와이프 중인 항목의 실시간 위치 업데이트
                             const swipeX = swipeCurrentX - swipeStartX;
-                            const swipeAmount = Math.abs(swipeX);
-                            
-                            // 왼쪽으로 스와이프한 경우 clip-path 적용
-                            if (swipeX < 0) {
-                                const clipLeft = Math.min(swipeAmount, 100); // 최대 100px까지
-                                return `transform: translateX(${swipeX}px); clip-path: inset(0 0 0 ${clipLeft}px);`;
-                            } else {
-                                return `transform: translateX(${swipeX}px);`;
-                            }
+                            // clip-path 제거, transform만 적용
+                            return `transform: translateX(${swipeX}px);`;
                         } else if (isSelected(task.id)) {
-                            // 선택된 할 일: -40px만큼 왼쪽 부분이 짧아지는 효과 (영역 밖으로 나가 잘린 느낌)
-                            return `transform: translateX(-40px); clip-path: inset(0 0 0 40px);`;
+                            // 선택된 할 일: -10px만큼 왼쪽으로 밀림 (clip-path 제거)
+                            return `transform: translateX(-10px);`;
                         }
                         return '';
                     })()}
@@ -532,17 +533,8 @@
                 <ul 
                     class="completed-list" 
                     transition:slide={{ axis: 'y', duration: 300 }}
-                    use:dndzone={{ 
-                        items: completedTodosList,
-                        flipDurationMs: 200,
-                        dragDisabled: false,
-                        morphDisabled: false,
-                        dragTransitionOptions: { duration: 200, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' }
-                    }}
-                    on:consider={handleCompletedConsider}
-                    on:finalize={handleCompletedFinalize}
                 >
-                    {#each completedTodosList as task, index (task.id)}
+                    {#each completedTodos as task, index (task.id)}
                         <li 
                             class:completed={task.isComplete} 
                             class:focus={task.category === 'Focus'}
@@ -763,6 +755,11 @@
         user-select: none;
         touch-action: pan-y; /* 수직 스크롤은 허용, 수평 스와이프는 커스텀 처리 */
     }
+    
+    /* 수평 스와이프 중에는 드래그앤드롭 비활성화 */
+    li.swiping {
+        touch-action: pan-x; /* 수평 스와이프만 허용 */
+    }
 
     li:active {
         cursor: grabbing;
@@ -772,7 +769,7 @@
         transition: transform 0.1s ease-out; /* 스와이프 중 부드러운 전환 */
     }
     
-    /* 드래그앤드롭 시각적 피드백 */
+    /* 드래그앤드롭 시각적 피드백 (수직 드래그만) */
     li.svelte-dnd-draggable {
         cursor: grab;
     }
@@ -781,85 +778,21 @@
         cursor: grabbing;
     }
     
-    li.svelte-dnd-drag-over {
-        opacity: 0.5;
-        transform: scale(1.02);
-        background: rgba(0, 240, 255, 0.1);
-        border-top: 2px solid var(--primary-cyan);
-    }
-    
     li.svelte-dnd-dragged {
-        opacity: 0.6;
-        transform: scale(0.95);
-        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3), 0 0 20px rgba(0, 240, 255, 0.5);
+        opacity: 0.7;
+        transform: scale(0.98);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4), 0 0 30px rgba(0, 240, 255, 0.4), 0 0 50px rgba(0, 240, 255, 0.2);
         z-index: 1000;
+        transition: all 0.2s ease;
     }
 
-    /* 선택된 할 일의 시각적 효과 - 영역 밖으로 나가 잘린 느낌 */
+    /* 선택된 할 일의 시각적 효과 - 왼쪽으로 약간 밀림 */
     li.selected {
-        overflow: hidden; /* 왼쪽 부분이 잘리도록 */
         opacity: 0.85;
         background: rgba(255, 107, 157, 0.1);
         border-right: 3px solid #ff6b9d;
-        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s, background 0.3s, clip-path 0.3s;
-        /* transform과 clip-path는 style 속성에서 처리 */
-    }
-    
-    /* 잘려나간 왼쪽 부분에 네온 글로우 효과 */
-    li.clipped {
-        position: relative;
-    }
-    
-    li.clipped::before {
-        content: '';
-        position: absolute;
-        left: 0;
-        top: 0;
-        bottom: 0;
-        width: 4px;
-        background: linear-gradient(to right, 
-            rgba(255, 107, 157, 0) 0%,
-            rgba(255, 107, 157, 1) 50%,
-            rgba(255, 107, 157, 0) 100%
-        );
-        /* 효과 범위를 크게 늘려서 잘린 부분 밖에서도 보이도록 */
-        box-shadow: 
-            0 0 20px rgba(255, 107, 157, 1),
-            0 0 40px rgba(255, 107, 157, 0.9),
-            0 0 60px rgba(255, 107, 157, 0.7),
-            0 0 80px rgba(255, 107, 157, 0.5),
-            -10px 0 30px rgba(255, 107, 157, 0.6),
-            -20px 0 50px rgba(255, 107, 157, 0.4),
-            -30px 0 70px rgba(255, 107, 157, 0.3);
-        z-index: 1;
-        pointer-events: none;
-        animation: glow-pulse 2s ease-in-out infinite;
-    }
-    
-    /* 네온 글로우 펄스 애니메이션 */
-    @keyframes glow-pulse {
-        0%, 100% {
-            opacity: 0.9;
-            box-shadow: 
-                0 0 20px rgba(255, 107, 157, 1),
-                0 0 40px rgba(255, 107, 157, 0.9),
-                0 0 60px rgba(255, 107, 157, 0.7),
-                0 0 80px rgba(255, 107, 157, 0.5),
-                -10px 0 30px rgba(255, 107, 157, 0.6),
-                -20px 0 50px rgba(255, 107, 157, 0.4),
-                -30px 0 70px rgba(255, 107, 157, 0.3);
-        }
-        50% {
-            opacity: 1;
-            box-shadow: 
-                0 0 30px rgba(255, 107, 157, 1),
-                0 0 60px rgba(255, 107, 157, 1),
-                0 0 90px rgba(255, 107, 157, 0.8),
-                0 0 120px rgba(255, 107, 157, 0.6),
-                -15px 0 50px rgba(255, 107, 157, 0.8),
-                -30px 0 80px rgba(255, 107, 157, 0.6),
-                -45px 0 110px rgba(255, 107, 157, 0.4);
-        }
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s, background 0.3s;
+        /* transform은 style 속성에서 처리 */
     }
 
     li:last-child { border-bottom: none; }
