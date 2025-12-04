@@ -38,20 +38,27 @@
     let activeTodosList = [];
     let completedTodosList = [];
     
+    // 드래그 중인지 추적하는 플래그 (반응형 문이 드래그 중 로컬 리스트를 덮어쓰지 않도록)
+    let isDraggingActive = false;
+    let isDraggingCompleted = false;
+    
     // activeTodos와 completedTodos가 변경될 때 로컬 리스트 업데이트
-    $: if (activeTodos.length >= 0) {
+    // 단, 드래그 중이 아닐 때만 업데이트 (드래그 프리뷰 상태 보호)
+    $: if (activeTodos.length >= 0 && !isDraggingActive) {
         activeTodosList = activeTodos;
     }
-    $: if (completedTodos.length >= 0) {
+    $: if (completedTodos.length >= 0 && !isDraggingCompleted) {
         completedTodosList = completedTodos;
     }
     
     // 진행 중인 할 일 드래그앤드롭 핸들러
     function handleActiveConsider(e) {
+        isDraggingActive = true;
         activeTodosList = e.detail.items;
     }
     
     function handleActiveFinalize(e) {
+        isDraggingActive = false;
         if (e.detail.items !== activeTodosList) {
             activeTodosList = e.detail.items;
             // 순서 업데이트: activeTodos의 id만 전달
@@ -61,14 +68,18 @@
             }));
             reorderTodos(newOrder);
         }
+        // 스토어 업데이트 후 로컬 리스트 동기화를 위해 플래그 해제
+        // 반응형 문이 다음 업데이트에서 동기화할 수 있도록
     }
     
     // 완료된 할 일 드래그앤드롭 핸들러
     function handleCompletedConsider(e) {
+        isDraggingCompleted = true;
         completedTodosList = e.detail.items;
     }
     
     function handleCompletedFinalize(e) {
+        isDraggingCompleted = false;
         if (e.detail.items !== completedTodosList) {
             completedTodosList = e.detail.items;
             // 순서 업데이트: completedTodos의 id만 전달
@@ -80,6 +91,8 @@
             }));
             reorderTodos(newOrder);
         }
+        // 스토어 업데이트 후 로컬 리스트 동기화를 위해 플래그 해제
+        // 반응형 문이 다음 업데이트에서 동기화할 수 있도록
     }
     
     // 완료된 할 일 섹션 접기/펴기 토글
@@ -390,7 +403,7 @@
                         return '';
                     })()}
                 >
-                    <span class="index">{index + 1}.</span>
+                    <span class="index">{(task.order ?? index) + 1}.</span>
                     <span class="icon">
                         {#if getCategoryIcon(task.category) === 'target'}
                             <!-- 타겟 아이콘 SVG - design.png 스타일 -->
@@ -536,7 +549,7 @@
                             transition:fade={{ duration: 300 }}
                             style="cursor: default;"
                         >
-                            <span class="index">{activeTodos.length + index + 1}.</span>
+                            <span class="index">{(task.order ?? (activeTodos.length + index)) + 1}.</span>
                             <span class="icon">
                                 {#if getCategoryIcon(task.category) === 'target'}
                                     <svg 
