@@ -1,10 +1,10 @@
 <script>
-    import { fly, fade } from 'svelte/transition';
+    import { fly, fade, slide } from 'svelte/transition';
     import { createEventDispatcher } from 'svelte';
-    import { onDestroy } from 'svelte';
+    import { onDestroy, onMount } from 'svelte';
     import NewTaskInput from '$lib/components/NewTaskInput.svelte';
     import SelectionBar from '$lib/components/SelectionBar.svelte';
-    import { addTodo, completeTodo, deleteTodo, updateTodo, todos } from '$lib/stores/todoStore.js';
+    import { addTodo, completeTodo, deleteTodo, updateTodo, todos, getCompletedSectionCollapsed, setCompletedSectionCollapsed } from '$lib/stores/todoStore.js';
 
     let completedId = null;
     let rewardTimer = null;
@@ -21,6 +21,24 @@
     // 선택 상태 관리
     let selectedIds = new Set();
     const dispatch = createEventDispatcher();
+    
+    // 완료된 할 일 섹션 접기/펴기 상태
+    let completedSectionCollapsed = false;
+    
+    // 완료된 할 일과 진행 중인 할 일 분리
+    $: activeTodos = $todos.filter(task => !task.isComplete);
+    $: completedTodos = $todos.filter(task => task.isComplete);
+    
+    // 완료된 할 일 섹션 접기/펴기 토글
+    async function toggleCompletedSection() {
+        completedSectionCollapsed = !completedSectionCollapsed;
+        await setCompletedSectionCollapsed(completedSectionCollapsed);
+    }
+    
+    // 컴포넌트 마운트 시 저장된 설정 로드
+    onMount(async () => {
+        completedSectionCollapsed = await getCompletedSectionCollapsed();
+    });
 
     // 카테고리별 아이콘 매핑 함수
     function getCategoryIcon(category) {
@@ -274,7 +292,7 @@
     <div class="task-list">
         <h3>Today Tasks</h3>
         <ul>
-            {#each $todos as task, index (task.id)}
+            {#each activeTodos as task, index (task.id)}
                 <li 
                     class:completed={task.isComplete} 
                     class:focus={task.category === 'Focus'}
@@ -420,6 +438,105 @@
             {/each}
         </ul>
     </div>
+    
+    <!-- 완료된 할 일 섹션 -->
+    {#if completedTodos.length > 0}
+        <div class="completed-section">
+            <div class="completed-header" on:click={toggleCompletedSection} role="button" tabindex="0" on:keydown={(e) => e.key === 'Enter' && toggleCompletedSection()}>
+                <h3>Completed Tasks ({completedTodos.length})</h3>
+                <svg 
+                    class="collapse-icon" 
+                    class:collapsed={completedSectionCollapsed}
+                    width="20" 
+                    height="20" 
+                    viewBox="0 0 24 24" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    stroke-width="2" 
+                    stroke-linecap="round" 
+                    stroke-linejoin="round"
+                >
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            </div>
+            {#if !completedSectionCollapsed}
+                <ul class="completed-list" transition:slide={{ axis: 'y', duration: 300 }}>
+                    {#each completedTodos as task, index (task.id)}
+                        <li 
+                            class:completed={task.isComplete} 
+                            class:focus={task.category === 'Focus'}
+                            transition:fade={{ duration: 300 }}
+                            style="cursor: default;"
+                        >
+                            <span class="index">{activeTodos.length + index + 1}.</span>
+                            <span class="icon">
+                                {#if getCategoryIcon(task.category) === 'target'}
+                                    <svg 
+                                        width="18" 
+                                        height="18" 
+                                        viewBox="0 0 24 24" 
+                                        fill="none" 
+                                        stroke="currentColor" 
+                                        stroke-width="1.5" 
+                                        stroke-linecap="round" 
+                                        stroke-linejoin="round"
+                                        class="category-icon"
+                                    >
+                                        <circle cx="12" cy="12" r="9" />
+                                        <circle cx="12" cy="12" r="5" />
+                                        <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+                                    </svg>
+                                {:else if getCategoryIcon(task.category) === 'refresh'}
+                                    <svg 
+                                        width="18" 
+                                        height="18" 
+                                        viewBox="0 0 24 24" 
+                                        fill="none" 
+                                        stroke="currentColor" 
+                                        stroke-width="1.5" 
+                                        stroke-linecap="round" 
+                                        stroke-linejoin="round"
+                                        class="category-icon"
+                                    >
+                                        <polyline points="23 4 23 10 17 10"></polyline>
+                                        <polyline points="1 20 1 14 7 14"></polyline>
+                                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                                    </svg>
+                                {:else if getCategoryIcon(task.category) === 'zap'}
+                                    <svg 
+                                        width="18" 
+                                        height="18" 
+                                        viewBox="0 0 24 24" 
+                                        fill="none" 
+                                        stroke="currentColor" 
+                                        stroke-width="1.5" 
+                                        stroke-linecap="round" 
+                                        stroke-linejoin="round"
+                                        class="category-icon"
+                                    >
+                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                                    </svg>
+                                {:else}
+                                    {getCategoryIcon(task.category)}
+                                {/if}
+                            </span>
+                            <div class="content">
+                                <span class="title">{task.title}</span>
+                            </div>
+                            {#if task.category}
+                                <span class="tag">{task.category}</span>
+                            {/if}
+                            <div class="action-buttons">
+                                <button class="check-btn" on:click={() => toggleTask(task.id)}>
+                                    <div class="check-icon">✓</div>
+                                </button>
+                            </div>
+                        </li>
+                    {/each}
+                </ul>
+            {/if}
+        </div>
+    {/if}
 </div>
 
 <!-- 선택 바 컴포넌트 -->
@@ -488,6 +605,68 @@
         text-transform: uppercase;
         letter-spacing: 1px;
         text-shadow: 0 0 5px rgba(0, 240, 255, 0.3);
+    }
+    
+    /* 완료된 할 일 섹션 */
+    .completed-section {
+        margin-top: 20px;
+        background: var(--card-bg);
+        backdrop-filter: blur(8px);
+        border: var(--glass-border);
+        border-radius: 15px;
+        padding: 15px 20px;
+        box-sizing: border-box;
+    }
+    
+    .completed-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+        user-select: none;
+        padding: 5px 0;
+        transition: opacity 0.2s;
+    }
+    
+    .completed-header:hover {
+        opacity: 0.8;
+    }
+    
+    .completed-header h3 {
+        margin: 0;
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
+    .collapse-icon {
+        color: var(--text-muted);
+        transition: transform 0.3s ease;
+        flex-shrink: 0;
+    }
+    
+    .collapse-icon.collapsed {
+        transform: rotate(-90deg);
+    }
+    
+    .completed-list {
+        list-style: none;
+        padding: 0;
+        margin-top: 15px;
+    }
+    
+    .completed-list li {
+        display: flex;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        position: relative;
+        transition: background 0.2s;
+    }
+    
+    .completed-list li:last-child {
+        border-bottom: none;
     }
 
     ul { list-style: none; padding: 0; }

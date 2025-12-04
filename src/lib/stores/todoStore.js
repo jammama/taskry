@@ -5,6 +5,7 @@ import { uid } from 'uid';
 import { classifyTask } from '$lib/utils/taskClassifier';
 
 const STORAGE_KEY = 'taskry.todos';
+const SETTINGS_KEY = 'taskry.settings';
 const seedTodos = [
 	{ id: uid(10), title: '2hr Strength Training', isComplete: false, category: 'Focus', xp: 70 },
 	{ id: uid(10), title: 'Project Pitch Deck - Draft', isComplete: false, category: 'Focus', xp: 120 },
@@ -156,4 +157,29 @@ export const updateTodo = (id, newTitle) => {
 
         return currentTodos;
     });
+};
+
+// 사용자 설정 저장/로드 함수
+export const getCompletedSectionCollapsed = async () => {
+	if (!storage) return false;
+	
+	try {
+		const settings = await storage.getItem(SETTINGS_KEY);
+		return settings?.completedSectionCollapsed ?? false;
+	} catch (error) {
+		console.error('Failed to load settings from IndexedDB', error);
+		return false;
+	}
+};
+
+export const setCompletedSectionCollapsed = async (collapsed) => {
+	if (!storage) return;
+	
+	try {
+		const settings = await storage.getItem(SETTINGS_KEY) || {};
+		settings.completedSectionCollapsed = collapsed;
+		await storage.setItem(SETTINGS_KEY, settings);
+	} catch (error) {
+		console.error('Failed to save settings to IndexedDB', error);
+	}
 };
