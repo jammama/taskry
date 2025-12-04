@@ -7,10 +7,10 @@ import { classifyTask } from '$lib/utils/taskClassifier';
 const STORAGE_KEY = 'taskry.todos';
 const SETTINGS_KEY = 'taskry.settings';
 const seedTodos = [
-	{ id: uid(10), title: '2hr Strength Training', isComplete: false, category: 'Focus', xp: 70 },
-	{ id: uid(10), title: 'Project Pitch Deck - Draft', isComplete: false, category: 'Focus', xp: 120 },
-	{ id: uid(10), title: 'Grocery Shopping (Weekly)', isComplete: false, category: 'Rhythm', xp: 40 },
-	{ id: uid(10), title: '10min Meditation', isComplete: false, category: 'Rhythm', xp: 25 }
+	{ id: uid(10), title: '2hr Strength Training', isComplete: false, category: 'Focus', xp: 70, order: 0 },
+	{ id: uid(10), title: 'Project Pitch Deck - Draft', isComplete: false, category: 'Focus', xp: 120, order: 1 },
+	{ id: uid(10), title: 'Grocery Shopping (Weekly)', isComplete: false, category: 'Rhythm', xp: 40, order: 2 },
+	{ id: uid(10), title: '10min Meditation', isComplete: false, category: 'Rhythm', xp: 25, order: 3 }
 ];
 
 const cloneTodos = (list = []) => list.map((todo) => ({ ...todo }));
@@ -51,6 +51,12 @@ const hydrateFromIndexedDB = async () => {
 
 		if (Array.isArray(stored)) {
 			const snapshot = cloneTodos(stored);
+			// 기존 데이터에 order 필드가 없는 경우 마이그레이션
+			snapshot.forEach((todo, index) => {
+				if (todo.order === undefined) {
+					todo.order = index;
+				}
+			});
 			inMemoryTodos = snapshot;
 			todos.set(snapshot);
 			return;
@@ -93,16 +99,24 @@ export const addTodo = (title) => {
 
 	const { category, baseXP } = classifyTask(trimmedTitle);
 
-	queueUpdate((currentTodos) => [
-        ...currentTodos,
-        {
-            id: uid(10),
-			title: trimmedTitle,
-            isComplete: false,
-			category,
-			xp: baseXP
-        }
-    ]);
+	queueUpdate((currentTodos) => {
+		// 새로운 할 일의 order는 현재 최대 order + 1
+		const maxOrder = currentTodos.length > 0 
+			? Math.max(...currentTodos.map(t => t.order ?? 0))
+			: -1;
+		
+		return [
+			...currentTodos,
+			{
+				id: uid(10),
+				title: trimmedTitle,
+				isComplete: false,
+				category,
+				xp: baseXP,
+				order: maxOrder + 1
+			}
+		];
+	});
 };
 
 export const completeTodo = (id) => {
@@ -182,4 +196,37 @@ export const setCompletedSectionCollapsed = async (collapsed) => {
 	} catch (error) {
 		console.error('Failed to save settings to IndexedDB', error);
 	}
+};
+
+// Task 순서 업데이트 함수
+export const reorderTodos = (newOrder) => {
+	if (!Array.isArray(newOrder)) {
+		return;
+	}
+
+	queueUpdate((currentTodos) => {
+		// newOrder는 { id, order } 형태의 배열 또는 id 배열
+		const updatedTodos = [...currentTodos];
+		
+		// id 배열인 경우
+		if (newOrder.length > 0 && typeof newOrder[0] === 'string') {
+			newOrder.forEach((id, index) => {
+				const todo = updatedTodos.find(t => t.id === id);
+				if (todo) {
+					todo.order = index;
+				}
+			});
+		} else {
+			// { id, order } 형태의 배열인 경우
+			newOrder.forEach(({ id, order }) => {
+				const todo = updatedTodos.find(t => t.id === id);
+				if (todo) {
+					todo.order = order;
+				}
+			});
+		}
+		
+		// order 기준으로 정렬
+		return updatedTodos.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+	});
 };

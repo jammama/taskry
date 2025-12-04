@@ -2,9 +2,10 @@
     import { fly, fade, slide } from 'svelte/transition';
     import { createEventDispatcher } from 'svelte';
     import { onDestroy, onMount } from 'svelte';
+    import { dndzone } from 'svelte-dnd-action';
     import NewTaskInput from '$lib/components/NewTaskInput.svelte';
     import SelectionBar from '$lib/components/SelectionBar.svelte';
-    import { addTodo, completeTodo, deleteTodo, updateTodo, todos, getCompletedSectionCollapsed, setCompletedSectionCollapsed } from '$lib/stores/todoStore.js';
+    import { addTodo, completeTodo, deleteTodo, updateTodo, todos, getCompletedSectionCollapsed, setCompletedSectionCollapsed, reorderTodos } from '$lib/stores/todoStore.js';
 
     let completedId = null;
     let rewardTimer = null;
@@ -25,9 +26,61 @@
     // 완료된 할 일 섹션 접기/펴기 상태
     let completedSectionCollapsed = false;
     
-    // 완료된 할 일과 진행 중인 할 일 분리
-    $: activeTodos = $todos.filter(task => !task.isComplete);
-    $: completedTodos = $todos.filter(task => task.isComplete);
+    // 완료된 할 일과 진행 중인 할 일 분리 및 정렬
+    $: activeTodos = $todos
+        .filter(task => !task.isComplete)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    $: completedTodos = $todos
+        .filter(task => task.isComplete)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    
+    // 드래그앤드롭을 위한 로컬 상태 (각 섹션별로 독립적)
+    let activeTodosList = [];
+    let completedTodosList = [];
+    
+    // activeTodos와 completedTodos가 변경될 때 로컬 리스트 업데이트
+    $: if (activeTodos.length >= 0) {
+        activeTodosList = activeTodos;
+    }
+    $: if (completedTodos.length >= 0) {
+        completedTodosList = completedTodos;
+    }
+    
+    // 진행 중인 할 일 드래그앤드롭 핸들러
+    function handleActiveConsider(e) {
+        activeTodosList = e.detail.items;
+    }
+    
+    function handleActiveFinalize(e) {
+        if (e.detail.items !== activeTodosList) {
+            activeTodosList = e.detail.items;
+            // 순서 업데이트: activeTodos의 id만 전달
+            const newOrder = activeTodosList.map((item, index) => ({
+                id: item.id,
+                order: index
+            }));
+            reorderTodos(newOrder);
+        }
+    }
+    
+    // 완료된 할 일 드래그앤드롭 핸들러
+    function handleCompletedConsider(e) {
+        completedTodosList = e.detail.items;
+    }
+    
+    function handleCompletedFinalize(e) {
+        if (e.detail.items !== completedTodosList) {
+            completedTodosList = e.detail.items;
+            // 순서 업데이트: completedTodos의 id만 전달
+            // 완료된 할 일은 activeTodos 다음 순서로 시작
+            const activeCount = activeTodos.length;
+            const newOrder = completedTodosList.map((item, index) => ({
+                id: item.id,
+                order: activeCount + index
+            }));
+            reorderTodos(newOrder);
+        }
+    }
     
     // 완료된 할 일 섹션 접기/펴기 토글
     async function toggleCompletedSection() {
@@ -291,8 +344,18 @@
 
     <div class="task-list">
         <h3>Today Tasks</h3>
-        <ul>
-            {#each activeTodos as task, index (task.id)}
+        <ul 
+            use:dndzone={{ 
+                items: activeTodosList,
+                flipDurationMs: 200,
+                dragDisabled: false,
+                morphDisabled: false,
+                dragTransitionOptions: { duration: 200, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' }
+            }}
+            on:consider={handleActiveConsider}
+            on:finalize={handleActiveFinalize}
+        >
+            {#each activeTodosList as task, index (task.id)}
                 <li 
                     class:completed={task.isComplete} 
                     class:focus={task.category === 'Focus'}
@@ -398,19 +461,12 @@
                                     on:blur={() => saveEdit(task.id)}
                                     class="edit-input"
                                 />
-                                <div class="edit-actions">
-                                    <button class="edit-save-btn" on:click={() => saveEdit(task.id)} title="Save (Enter)">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                            <polyline points="20 6 9 17 4 12"></polyline>
-                                        </svg>
-                                    </button>
-                                    <button class="edit-cancel-btn" on:click={() => cancelEdit()} title="Cancel (ESC)">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                                        </svg>
-                                    </button>
-                                </div>
+                                <button class="edit-cancel-btn" on:click={() => cancelEdit()} title="Cancel (ESC)">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                    </svg>
+                                </button>
                             </div>
                         {:else}
                             <span class="title" on:dblclick={() => startEdit(task.id, task.title)}>{task.title}</span>
@@ -460,8 +516,20 @@
                 </svg>
             </div>
             {#if !completedSectionCollapsed}
-                <ul class="completed-list" transition:slide={{ axis: 'y', duration: 300 }}>
-                    {#each completedTodos as task, index (task.id)}
+                <ul 
+                    class="completed-list" 
+                    transition:slide={{ axis: 'y', duration: 300 }}
+                    use:dndzone={{ 
+                        items: completedTodosList,
+                        flipDurationMs: 200,
+                        dragDisabled: false,
+                        morphDisabled: false,
+                        dragTransitionOptions: { duration: 200, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' }
+                    }}
+                    on:consider={handleCompletedConsider}
+                    on:finalize={handleCompletedFinalize}
+                >
+                    {#each completedTodosList as task, index (task.id)}
                         <li 
                             class:completed={task.isComplete} 
                             class:focus={task.category === 'Focus'}
@@ -690,6 +758,29 @@
     li.swiping {
         transition: transform 0.1s ease-out; /* 스와이프 중 부드러운 전환 */
     }
+    
+    /* 드래그앤드롭 시각적 피드백 */
+    li.svelte-dnd-draggable {
+        cursor: grab;
+    }
+    
+    li.svelte-dnd-draggable:active {
+        cursor: grabbing;
+    }
+    
+    li.svelte-dnd-drag-over {
+        opacity: 0.5;
+        transform: scale(1.02);
+        background: rgba(0, 240, 255, 0.1);
+        border-top: 2px solid var(--primary-cyan);
+    }
+    
+    li.svelte-dnd-dragged {
+        opacity: 0.6;
+        transform: scale(0.95);
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3), 0 0 20px rgba(0, 240, 255, 0.5);
+        z-index: 1000;
+    }
 
     /* 선택된 할 일의 시각적 효과 - 영역 밖으로 나가 잘린 느낌 */
     li.selected {
@@ -789,64 +880,56 @@
 
     /* 편집 모드 스타일 */
     .edit-container {
-        display: flex;
-        align-items: center;
-        gap: 8px;
+        position: relative;
         width: 100%;
     }
 
     .edit-input {
-        flex: 1;
+        width: 100%;
         background: rgba(0, 240, 255, 0.1);
         border: 1px solid var(--primary-cyan);
         border-radius: 6px;
-        padding: 6px 10px;
+        padding: 6px 32px 6px 10px; /* 오른쪽 패딩 추가하여 취소 버튼 공간 확보 */
         color: var(--text-main);
         font-size: 0.95rem;
         outline: none;
         box-shadow: 0 0 8px rgba(0, 240, 255, 0.3);
+        box-sizing: border-box;
     }
 
     .edit-input:focus {
         box-shadow: 0 0 12px rgba(0, 240, 255, 0.5);
     }
 
-    .edit-actions {
-        display: flex;
-        gap: 4px;
-    }
-
-    .edit-save-btn,
     .edit-cancel-btn {
+        position: absolute;
+        top: 50%;
+        right: 6px;
+        transform: translateY(-50%);
         background: none;
         border: none;
         cursor: pointer;
-        width: 28px;
-        height: 28px;
+        width: 24px;
+        height: 24px;
         display: flex;
         align-items: center;
         justify-content: center;
         border-radius: 4px;
-        transition: background 0.2s, transform 0.2s;
-    }
-
-    .edit-save-btn {
-        color: var(--primary-cyan);
-    }
-
-    .edit-save-btn:hover {
-        background: rgba(0, 240, 255, 0.2);
-        transform: scale(1.1);
-    }
-
-    .edit-cancel-btn {
+        transition: background 0.2s, transform 0.2s, opacity 0.2s;
         color: var(--text-muted);
+        opacity: 0.7;
+        z-index: 10;
     }
 
     .edit-cancel-btn:hover {
         background: rgba(255, 107, 157, 0.2);
         color: #ff6b9d;
-        transform: scale(1.1);
+        opacity: 1;
+        transform: translateY(-50%) scale(1.1);
+    }
+
+    .edit-cancel-btn:active {
+        transform: translateY(-50%) scale(0.95);
     }
 
     /* Tag 스타일 - 배경 없음, 미묘한 회색 톤, 제목 오른쪽 배치 */

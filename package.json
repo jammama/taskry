@@ -33,6 +33,7 @@
 	},
 	"dependencies": {
 		"localforage": "^1.10.0",
+		"svelte-dnd-action": "^0.9.68",
 		"uid": "^2.0.2",
 		"vite-plugin-pwa": "^1.2.0"
 	}
