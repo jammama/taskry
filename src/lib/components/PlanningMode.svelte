@@ -2,23 +2,26 @@
     import { fly, fade, slide } from 'svelte/transition';
     import { createEventDispatcher } from 'svelte';
     import { onDestroy, onMount } from 'svelte';
-    import { dndzone } from 'svelte-dnd-action';
     import NewTaskInput from '$lib/components/NewTaskInput.svelte';
     import SelectionBar from '$lib/components/SelectionBar.svelte';
     import { addTodo, completeTodo, deleteTodo, updateTodo, todos, getCompletedSectionCollapsed, setCompletedSectionCollapsed, reorderTodos } from '$lib/stores/todoStore.js';
+    import { createSwipeGestureHandler } from '$lib/utils/swipeGesture.js';
+    import { getCategoryIcon } from '$lib/utils/categoryUtils.js';
+    import TargetIcon from '$lib/components/icons/TargetIcon.svelte';
+    import RefreshIcon from '$lib/components/icons/RefreshIcon.svelte';
+    import ZapIcon from '$lib/components/icons/ZapIcon.svelte';
+    import CollapseIcon from '$lib/components/icons/CollapseIcon.svelte';
+    import CancelIcon from '$lib/components/icons/CancelIcon.svelte';
+    import confetti from 'canvas-confetti';
+    import './PlanningMode.css';
 
     let completedId = null;
     let rewardTimer = null;
     let editingId = null;
     let editingTitle = '';
     let editInputElement = null;
-    // 스와이프 제스처 상태 변수
-    let swipeStartX = null;
-    let swipeStartY = null;
-    let swipeCurrentX = null;
-    let swipeCurrentY = null;
-    let isSwiping = false;
-    let swipingId = null;
+    let taskListElement = null;
+    let animatingCheckId = null; // 애니메이션 중인 체크박스 ID
     // 선택 상태 관리
     let selectedIds = new Set();
     const dispatch = createEventDispatcher();
@@ -34,43 +37,201 @@
         .filter(task => task.isComplete)
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     
-    // 드래그앤드롭을 위한 로컬 상태 (진행 중인 할 일만)
-    let activeTodosList = [];
+    // 수직 스와이프 상태 관리
+    let draggedTaskOriginalIndex = -1; // 드래그 중인 Task의 원래 인덱스
+    let dropTargetIndex = -1; // 드롭될 위치 인덱스 (-1이면 드롭 위치 없음)
+    let dropTargetPosition = null; // 'top' | 'bottom' | null - 드롭 위치가 위인지 아래인지
+    let draggedTaskShadowY = null; // shadow div의 Y 위치
+    let draggedTaskData = null; // 드래그 중인 Task 데이터 (shadow용)
     
-    // 드래그 중인지 추적하는 플래그 (반응형 문이 드래그 중 로컬 리스트를 덮어쓰지 않도록)
-    let isDraggingActive = false;
-    // 수평 스와이프 중인지 추적 (드래그앤드롭과 충돌 방지)
-    let isHorizontalSwiping = false;
-    // 드래그 방향 감지를 위한 초기 이동 거리
-    let initialDragDirection = null; // 'horizontal' | 'vertical' | null
-    
-    // activeTodos가 변경될 때 로컬 리스트 업데이트
-    // 단, 드래그 중이 아닐 때만 업데이트 (드래그 프리뷰 상태 보호)
-    $: if (!isDraggingActive) {
-        activeTodosList = activeTodos;
-    }
-    
-    // 진행 중인 할 일 드래그앤드롭 핸들러
-    function handleActiveConsider(e) {
-        isDraggingActive = true;
-        activeTodosList = e.detail.items;
-    }
-    
-    function handleActiveFinalize(e) {
-        isDraggingActive = false;
-        if (e.detail.items !== activeTodosList) {
-            activeTodosList = e.detail.items;
-            // 순서 업데이트: activeTodos의 id만 전달
-            const newOrder = activeTodosList.map((item, index) => ({
-                id: item.id,
-                order: index
-            }));
-            reorderTodos(newOrder);
+    // 스와이프 제스처 핸들러 생성
+    const swipeHandler = createSwipeGestureHandler({
+        onSwipeStart: (taskId, element) => {
+            // 편집 모드 중일 때는 스와이프 비활성화
+            if (editingId === taskId) {
+                swipeHandler.reset();
+                return;
+            }
+            
+            // 수직 스와이프 상태 초기화
+            draggedTaskOriginalIndex = -1;
+            dropTargetIndex = -1;
+            dropTargetPosition = null;
+            draggedTaskShadowY = null;
+            draggedTaskData = null;
+        },
+        onSwipeMove: (taskId, deltaX, deltaY, direction) => {
+            // 수평 스와이프: 시각적 피드백만 (비즈니스 로직 없음)
+            // 수직 스와이프: 시각적 피드백만 (드래그 중에는 순서 변경 안 함)
+            if (direction === 'vertical') {
+                const state = swipeHandler.getState();
+                // 현재 마우스/터치 위치 계산
+                if (state.swipeStartY !== null && state.swipeCurrentY !== null) {
+                    // 드래그 중인 Task 데이터 저장 (처음 한 번만)
+                    if (draggedTaskData === null) {
+                        const task = activeTodos.find(t => t.id === taskId);
+                        if (task) {
+                            draggedTaskData = task;
+                            draggedTaskOriginalIndex = activeTodos.findIndex(t => t.id === taskId);
+                        }
+                    }
+                    // shadow 위치 업데이트
+                    draggedTaskShadowY = state.swipeCurrentY;
+                    // drop target 계산 (순서 변경은 하지 않음)
+                    handleVerticalSwipeVisualFeedback(taskId, state.swipeCurrentY);
+                }
+            }
+        },
+        onSwipeEnd: (taskId, deltaX, deltaY, direction) => {
+            if (direction === 'horizontal') {
+                // 수평 스와이프 종료 - 선택/해제 처리
+                const threshold = 30;
+                if (deltaX < -threshold) {
+                    // 왼쪽으로 스와이프 - 선택
+                    if (!selectedIds.has(taskId)) {
+                        selectedIds.add(taskId);
+                        selectedIds = selectedIds; // Svelte 반응성 트리거
+                        console.log(`${selectedIds.size}개 선택됨`);
+                    }
+                } else if (deltaX > threshold) {
+                    // 오른쪽으로 스와이프 - 선택 해제
+                    if (selectedIds.has(taskId)) {
+                        selectedIds.delete(taskId);
+                        selectedIds = selectedIds; // Svelte 반응성 트리거
+                        console.log(`선택 해제됨 (현재 ${selectedIds.size}개 선택됨)`);
+                    }
+                }
+            } else if (direction === 'vertical') {
+                // 수직 스와이프 종료 처리 - 실제 순서 변경 수행
+                if (draggedTaskOriginalIndex !== -1 && dropTargetIndex !== -1 && dropTargetIndex !== draggedTaskOriginalIndex) {
+                // 실제 순서 변경
+                const newOrder = [...activeTodos];
+                const [movedTask] = newOrder.splice(draggedTaskOriginalIndex, 1);
+                
+                // targetIndex 조정
+                let adjustedTargetIndex = dropTargetIndex;
+                if (dropTargetPosition === 'bottom') {
+                    // 아래쪽 border에 드롭하면 해당 Task 다음에 배치
+                    adjustedTargetIndex = dropTargetIndex + 1;
+                }
+                // 위쪽 border에 드롭하면 해당 Task 앞에 배치 (이미 dropTargetIndex가 맞음)
+                if (dropTargetIndex > draggedTaskOriginalIndex && dropTargetPosition === 'top') {
+                    adjustedTargetIndex = dropTargetIndex - 1;
+                }
+                
+                newOrder.splice(adjustedTargetIndex, 0, movedTask);
+                    
+                    // 순서 업데이트
+                    const orderUpdate = newOrder.map((item, index) => ({
+                        id: item.id,
+                        order: index
+                    }));
+                    reorderTodos(orderUpdate);
+                }
+                
+                // 상태 초기화
+                draggedTaskOriginalIndex = -1;
+                dropTargetIndex = -1;
+                dropTargetPosition = null;
+                draggedTaskShadowY = null;
+                draggedTaskData = null;
+            }
         }
-        // 스토어 업데이트 후 로컬 리스트 동기화를 위해 플래그 해제
-        // 반응형 문이 다음 업데이트에서 동기화할 수 있도록
+    });
+    
+    // 스와이프 상태를 반응형으로 추적
+    let swipeState = { 
+        isSwiping: false, 
+        swipingId: null, 
+        currentDirection: null,
+        swipeStartX: null, 
+        swipeStartY: null,
+        swipeCurrentX: null,
+        swipeCurrentY: null,
+        deltaX: 0,
+        deltaY: 0
+    };
+    
+    // 스와이프 상태 업데이트 함수
+    function updateSwipeState() {
+        swipeState = swipeHandler.getState();
     }
     
+    $: isSwiping = swipeState.isSwiping;
+    $: swipingId = swipeState.swipingId;
+    $: currentDirection = swipeState.currentDirection;
+    $: swipeStartX = swipeState.swipeStartX;
+    $: swipeStartY = swipeState.swipeStartY;
+    $: swipeCurrentX = swipeState.swipeCurrentX;
+    $: swipeCurrentY = swipeState.swipeCurrentY;
+    $: deltaX = swipeState.deltaX;
+    $: deltaY = swipeState.deltaY;
+    
+    // 편의 변수
+    $: isHorizontalSwiping = isSwiping && currentDirection === 'horizontal';
+    $: isVerticalSwiping = isSwiping && currentDirection === 'vertical';
+    
+    // 전역 이벤트 리스너 (스와이프 중일 때만 활성화)
+    onMount(() => {
+        function handleGlobalMove(event) {
+            const state = swipeHandler.getState();
+            // swipingId가 있으면 스와이프가 시작된 것으로 간주
+            if (state.swipingId) {
+                swipeHandler.handleMove(event, state.swipingId);
+                updateSwipeState();
+            }
+        }
+
+        function handleGlobalEnd(event) {
+            const state = swipeHandler.getState();
+            // swipingId가 있으면 스와이프가 시작된 것으로 간주
+            if (state.swipingId) {
+                swipeHandler.handleEnd(event, state.swipingId);
+                updateSwipeState();
+            }
+        }
+
+        // 브라우저 기본 드래그 동작 차단
+        function handleDragStart(event) {
+            // 입력 필드가 아닌 경우에만 차단
+            const target = event.target;
+            if (target.tagName !== 'INPUT' && 
+                target.tagName !== 'TEXTAREA' && 
+                !target.isContentEditable) {
+                event.preventDefault();
+                return false;
+            }
+        }
+
+        // 텍스트 선택 시작 차단 (입력 필드 제외)
+        function handleSelectStart(event) {
+            const target = event.target;
+            if (target.tagName !== 'INPUT' && 
+                target.tagName !== 'TEXTAREA' && 
+                !target.isContentEditable) {
+                event.preventDefault();
+                return false;
+            }
+        }
+
+        // 전역 이벤트 리스너 등록
+        document.addEventListener('touchmove', handleGlobalMove, { passive: false });
+        document.addEventListener('touchend', handleGlobalEnd);
+        document.addEventListener('mousemove', handleGlobalMove);
+        document.addEventListener('mouseup', handleGlobalEnd);
+        document.addEventListener('dragstart', handleDragStart);
+        document.addEventListener('selectstart', handleSelectStart);
+
+        return () => {
+            // 클린업
+            document.removeEventListener('touchmove', handleGlobalMove);
+            document.removeEventListener('touchend', handleGlobalEnd);
+            document.removeEventListener('mousemove', handleGlobalMove);
+            document.removeEventListener('mouseup', handleGlobalEnd);
+            document.removeEventListener('dragstart', handleDragStart);
+            document.removeEventListener('selectstart', handleSelectStart);
+        };
+    });
     
     // 완료된 할 일 섹션 접기/펴기 토글
     async function toggleCompletedSection() {
@@ -83,15 +244,6 @@
         completedSectionCollapsed = await getCompletedSectionCollapsed();
     });
 
-    // 카테고리별 아이콘 매핑 함수
-    function getCategoryIcon(category) {
-        const iconMap = {
-            'Focus': 'target', // SVG 아이콘으로 대체
-            'Rhythm': 'refresh', // SVG 아이콘으로 대체
-            'Catalyst': 'zap' // SVG 아이콘으로 대체
-        };
-        return iconMap[category] || '📝';
-    }
 
     function handleAddTask(title) {
         addTodo(title);
@@ -107,8 +259,20 @@
         // todoStore의 completeTodo 함수 호출 (상태 토글)
         completeTodo(id);
 
-        // 완료 상태로 변경된 경우에만 보상 팝업 표시
+        // 완료 상태로 변경된 경우에만 보상 팝업 표시 및 애니메이션
         if (!wasCompleted) {
+            // 체크박스 애니메이션 트리거
+            animatingCheckId = id;
+            setTimeout(() => {
+                animatingCheckId = null;
+            }, 600); // 애니메이션 지속 시간
+
+            // 파티클 효과
+            triggerConfetti();
+
+            // 화면 살짝 흔들림 효과
+            triggerScreenShake();
+
             completedId = id;
 
             // 이전 타이머가 있으면 클리어
@@ -138,155 +302,110 @@
         deleteTodo(id);
     }
 
-    // 스와이프 제스처 처리 함수들
-    function handleTouchStart(event, taskId) {
-        // 편집 모드 중일 때는 스와이프 비활성화
+    // 스와이프 제스처 처리 함수들 (유틸 함수 래퍼)
+    // 공통 로직: 편집 모드 체크 후 swipeHandler 호출 및 상태 업데이트
+    function handleSwipeStart(event, taskId, element) {
         if (editingId === taskId) return;
-        
-        const touch = event.touches?.[0] || event;
-        swipeStartX = touch.clientX;
-        swipeStartY = touch.clientY;
-        swipeCurrentX = swipeStartX;
-        swipeCurrentY = swipeStartY;
-        isSwiping = false;
-        swipingId = taskId;
-        // 드래그 방향 감지 초기화
-        initialDragDirection = null;
-        isHorizontalSwiping = false;
+        // 브라우저 기본 드래그 동작 차단
+        event.preventDefault();
+        swipeHandler.handleStart(event, taskId, element);
+        updateSwipeState();
+    }
+
+    function handleSwipeMove(event, taskId) {
+        if (editingId === taskId) return;
+        // 브라우저 기본 드래그 동작 차단
+        event.preventDefault();
+        swipeHandler.handleMove(event, taskId);
+        updateSwipeState();
+    }
+
+    function handleSwipeEnd(event, taskId) {
+        // 브라우저 기본 드래그 동작 차단
+        event.preventDefault();
+        swipeHandler.handleEnd(event, taskId);
+        updateSwipeState();
+    }
+
+    // 터치 이벤트 처리
+    function handleTouchStart(event, taskId, element) {
+        handleSwipeStart(event, taskId, element);
     }
 
     function handleTouchMove(event, taskId) {
-        // 편집 모드이거나 다른 항목을 스와이프 중이면 무시
-        if (swipingId !== taskId || editingId === taskId) return;
-        
-        const touch = event.touches?.[0] || event;
-        swipeCurrentX = touch.clientX;
-        swipeCurrentY = touch.clientY;
-        
-        const deltaX = swipeCurrentX - swipeStartX;
-        const deltaY = Math.abs(swipeCurrentY - swipeStartY);
-        const absDeltaX = Math.abs(deltaX);
-        
-        // 초기 방향 감지 (5px 이상 이동 시)
-        if (initialDragDirection === null && (absDeltaX > 5 || deltaY > 5)) {
-            if (absDeltaX > deltaY) {
-                // 수평 방향 감지 - 드래그앤드롭 즉시 비활성화
-                initialDragDirection = 'horizontal';
-                isHorizontalSwiping = true;
-                isSwiping = true;
-                event.preventDefault();
-                event.stopPropagation(); // 드래그앤드롭 이벤트 전파 차단
-                return;
-            } else if (deltaY > absDeltaX) {
-                // 수직 방향 감지 - 드래그앤드롭 허용
-                initialDragDirection = 'vertical';
-                isHorizontalSwiping = false;
-            }
-        }
-        
-        // 이미 수평 방향으로 감지된 경우
-        if (initialDragDirection === 'horizontal') {
-            isSwiping = true;
-            isHorizontalSwiping = true;
-            event.preventDefault(); // 스크롤 방지
-            event.stopPropagation(); // 드래그앤드롭 이벤트 전파 차단
-        }
+        handleSwipeMove(event, taskId);
     }
 
     function handleTouchEnd(event, taskId) {
-        // 다른 항목을 스와이프 중이면 무시
-        if (swipingId !== taskId) return;
-        
-        // 스와이프 방향에 따라 선택/해제 처리
-        const deltaX = swipeCurrentX - swipeStartX;
-        const threshold = 30; // 스와이프 임계값
-        
-        if (isSwiping) {
-            if (deltaX < -threshold) {
-                // 왼쪽으로 스와이프 - 선택
-                if (!selectedIds.has(taskId)) {
-                    selectedIds.add(taskId);
-                    selectedIds = selectedIds; // Svelte 반응성 트리거
-                    console.log(`${selectedIds.size}개 선택됨`);
-                }
-            } else if (deltaX > threshold) {
-                // 오른쪽으로 스와이프 - 선택 해제
-                if (selectedIds.has(taskId)) {
-                    selectedIds.delete(taskId);
-                    selectedIds = selectedIds; // Svelte 반응성 트리거
-                    console.log(`선택 해제됨 (현재 ${selectedIds.size}개 선택됨)`);
-                }
-            }
-        }
-        
-        // 스와이프 상태 초기화
-        swipeStartX = null;
-        swipeStartY = null;
-        swipeCurrentX = null;
-        swipeCurrentY = null;
-        isSwiping = false;
-        isHorizontalSwiping = false; // 수평 스와이프 종료
-        initialDragDirection = null; // 방향 감지 초기화
-        swipingId = null;
+        handleSwipeEnd(event, taskId);
     }
 
     // 마우스 이벤트 처리 (데스크톱 지원)
-    function handleMouseDown(event, taskId) {
-        if (editingId === taskId) return;
-        handleTouchStart(event, taskId);
+    function handleMouseDown(event, taskId, element) {
+        handleSwipeStart(event, taskId, element);
     }
 
     function handleMouseMove(event, taskId) {
-        if (swipingId === taskId && swipeStartX !== null) {
-            handleTouchMove(event, taskId);
-            // 수평 스와이프 중이면 드래그앤드롭 이벤트 차단
-            if (isHorizontalSwiping) {
-                event.preventDefault();
-                event.stopPropagation();
-            }
-        }
+        handleSwipeMove(event, taskId);
     }
 
     function handleMouseUp(event, taskId) {
-        if (swipingId === taskId) {
-            handleTouchEnd(event, taskId);
-        }
+        handleSwipeEnd(event, taskId);
     }
 
-    function handleMouseLeave(event, taskId) {
-        // 마우스가 항목 밖으로 나갈 때 스와이프의 임계수치를 넘은 것으로 판단하여 선택/해제 처리
-        if (swipingId === taskId && swipeStartX !== null) {
-            const deltaX = swipeCurrentX - swipeStartX;
-            const threshold = 30; // 스와이프 임계값
+    
+    // 수직 스와이프 시각적 피드백만 처리 (순서 변경은 하지 않음)
+    function handleVerticalSwipeVisualFeedback(taskId, currentY) {
+        const state = swipeHandler.getState();
+        if (state.swipingId !== taskId || state.currentDirection !== 'vertical') return;
+        if (draggedTaskOriginalIndex === -1) return;
+        
+        let targetIndex = draggedTaskOriginalIndex;
+        let targetPosition = null; // 'top' | 'bottom'
+        
+        // 모든 Task 요소의 위치 확인
+        for (let i = 0; i < activeTodos.length; i++) {
+            if (i === draggedTaskOriginalIndex) continue;
             
-            if (Math.abs(deltaX) > 10) { // 수평 이동이 있는 경우
-                if (deltaX < -threshold) {
-                    // 왼쪽으로 스와이프 - 선택
-                    if (!selectedIds.has(taskId)) {
-                        selectedIds.add(taskId);
-                        selectedIds = selectedIds; // Svelte 반응성 트리거
-                        console.log(`${selectedIds.size}개 선택됨`);
-                    }
-                } else if (deltaX > threshold) {
-                    // 오른쪽으로 스와이프 - 선택 해제
-                    if (selectedIds.has(taskId)) {
-                        selectedIds.delete(taskId);
-                        selectedIds = selectedIds; // Svelte 반응성 트리거
-                        console.log(`선택 해제됨 (현재 ${selectedIds.size}개 선택됨)`);
-                    }
+            // DOM에서 해당 Task의 요소 찾기 (data-task-id로 찾기)
+            const task = activeTodos[i];
+            const taskElement = document.querySelector(`.task-list ul li[data-task-id="${task.id}"]`);
+            
+            if (!taskElement) continue;
+            
+            const rect = taskElement.getBoundingClientRect();
+            const taskCenterY = rect.top + rect.height / 2;
+            const taskTopY = rect.top;
+            const taskBottomY = rect.bottom;
+            
+            // 마우스가 Task 영역 내에 있는지 확인
+            if (currentY >= taskTopY && currentY <= taskBottomY) {
+                // Task의 중앙을 기준으로 위/아래 판단
+                if (currentY < taskCenterY) {
+                    // 위쪽에 있음 - 위쪽 border 강조
+                    targetIndex = i;
+                    targetPosition = 'top';
+                } else {
+                    // 아래쪽에 있음 - 아래쪽 border 강조
+                    targetIndex = i;
+                    targetPosition = 'bottom';
                 }
+                break;
+            } else if (currentY < taskTopY && i < draggedTaskOriginalIndex) {
+                // Task 위쪽 영역에 있고, 원래 인덱스보다 위에 있음
+                targetIndex = i;
+                targetPosition = 'top';
+                break;
+            } else if (currentY > taskBottomY && i > draggedTaskOriginalIndex) {
+                // Task 아래쪽 영역에 있고, 원래 인덱스보다 아래에 있음
+                targetIndex = i;
+                targetPosition = 'bottom';
             }
-            
-            // 스와이프 상태 초기화
-            swipeStartX = null;
-            swipeStartY = null;
-            swipeCurrentX = null;
-            swipeCurrentY = null;
-            isSwiping = false;
-            isHorizontalSwiping = false; // 수평 스와이프 종료
-            initialDragDirection = null; // 방향 감지 초기화
-            swipingId = null;
         }
+        
+        // 드롭 위치 업데이트 (시각적 피드백만)
+        dropTargetIndex = targetIndex;
+        dropTargetPosition = targetPosition;
     }
 
     // 선택 상태 관리 함수들
@@ -298,8 +417,8 @@
     $: selectedCount = selectedIds.size;
 
     function clearSelection() {
-        selectedIds.clear();
-        selectedIds = selectedIds; // Svelte 반응성 트리거
+        // 새로운 Set을 생성하여 반응성 트리거 (명시적 반응성 보장)
+        selectedIds = new Set();
     }
 
     function deleteSelected() {
@@ -345,6 +464,58 @@
         }
     }
 
+    // 파티클 효과 트리거
+    function triggerConfetti() {
+        const duration = 2000;
+        const animationEnd = Date.now() + duration;
+        const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 10000 };
+
+        function randomInRange(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        const interval = setInterval(function() {
+            const timeLeft = animationEnd - Date.now();
+
+            if (timeLeft <= 0) {
+                return clearInterval(interval);
+            }
+
+            const particleCount = 50 * (timeLeft / duration);
+
+            // 폭죽 효과
+            confetti({
+                ...defaults,
+                particleCount,
+                origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }
+            });
+            confetti({
+                ...defaults,
+                particleCount,
+                origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 }
+            });
+
+            // 별 효과
+            confetti({
+                ...defaults,
+                particleCount: particleCount * 0.5,
+                origin: { x: randomInRange(0.4, 0.6), y: Math.random() - 0.2 },
+                colors: ['#00f0ff', '#ff6b9d', '#ffd700', '#ffa500']
+            });
+        }, 250);
+    }
+
+    // 화면 살짝 흔들림 효과
+    function triggerScreenShake() {
+        const planningScreen = document.querySelector('.planning-screen');
+        if (!planningScreen) return;
+
+        planningScreen.style.animation = 'none';
+        setTimeout(() => {
+            planningScreen.style.animation = 'screen-shake 0.5s ease-in-out';
+        }, 10);
+    }
+
     // 컴포넌트 언마운트 시 타이머 정리
     onDestroy(() => {
         if (rewardTimer) {
@@ -366,40 +537,32 @@
 
     <div class="task-list">
         <h3>Today Tasks</h3>
-        <ul 
-            use:dndzone={{ 
-                items: activeTodosList,
-                flipDurationMs: 200,
-                dragDisabled: isHorizontalSwiping, // 수평 스와이프 중에는 드래그앤드롭 비활성화
-                morphDisabled: false,
-                dragTransitionOptions: { duration: 200, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' }
-            }}
-            on:consider={handleActiveConsider}
-            on:finalize={handleActiveFinalize}
-        >
-            {#each activeTodosList as task, index (task.id)}
+        <ul style="position: relative;" bind:this={taskListElement}>
+            {#each activeTodos as task, index (task.id)}
                 <li 
+                    data-task-id={task.id}
+                    draggable="false"
                     class:completed={task.isComplete} 
                     class:focus={task.category === 'Focus'}
                     class:swiping={isSwiping && swipingId === task.id}
                     class:selected={isSelected(task.id)}
+                    class:vertical-swiping={isVerticalSwiping && swipingId === task.id}
+                    class:dragged-task={isVerticalSwiping && swipingId === task.id}
+                    class:drop-target-top={isVerticalSwiping && swipingId !== task.id && dropTargetIndex === index && dropTargetPosition === 'top'}
+                    class:drop-target-bottom={isVerticalSwiping && swipingId !== task.id && dropTargetIndex === index && dropTargetPosition === 'bottom'}
                     transition:fade={{ duration: 300 }}
-                    on:touchstart={(e) => handleTouchStart(e, task.id)}
-                    on:touchmove={(e) => handleTouchMove(e, task.id)}
-                    on:touchend={(e) => handleTouchEnd(e, task.id)}
-                    on:mousedown={(e) => handleMouseDown(e, task.id)}
-                    on:mousemove={(e) => handleMouseMove(e, task.id)}
-                    on:mouseup={(e) => handleMouseUp(e, task.id)}
-                    on:mouseleave={(e) => handleMouseLeave(e, task.id)}
+                    on:touchstart={(e) => handleTouchStart(e, task.id, e.currentTarget)}
+                    on:mousedown={(e) => handleMouseDown(e, task.id, e.currentTarget)}
+                    on:dragstart|preventDefault
+                    on:selectstart|preventDefault
+                    class:swiping-horizontal={isSwiping && swipingId === task.id && currentDirection === 'horizontal'}
                     style={(() => {
                         if (isSwiping && swipingId === task.id) {
-                            // 스와이프 중인 항목의 실시간 위치 업데이트
-                            const swipeX = swipeCurrentX - swipeStartX;
-                            // clip-path 제거, transform만 적용
-                            return `transform: translateX(${swipeX}px);`;
-                        } else if (isSelected(task.id)) {
-                            // 선택된 할 일: -10px만큼 왼쪽으로 밀림 (clip-path 제거)
-                            return `transform: translateX(-10px);`;
+                            if (currentDirection === 'horizontal') {
+                                // 수평 스와이프: 스와이프 거리에 상관 없이 최대 -10px로 제한
+                                const limitedSwipeX = Math.max(deltaX, -10);
+                                return `--swipe-x: ${limitedSwipeX}px;`;
+                            }
                         }
                         return '';
                     })()}
@@ -407,59 +570,11 @@
                     <span class="index">{(task.order ?? index) + 1}.</span>
                     <span class="icon">
                         {#if getCategoryIcon(task.category) === 'target'}
-                            <!-- 타겟 아이콘 SVG - design.png 스타일 -->
-                            <svg 
-                                width="18" 
-                                height="18" 
-                                viewBox="0 0 24 24" 
-                                fill="none" 
-                                stroke="currentColor" 
-                                stroke-width="1.5" 
-                                stroke-linecap="round" 
-                                stroke-linejoin="round"
-                                class="category-icon"
-                            >
-                                <!-- 외부 원 -->
-                                <circle cx="12" cy="12" r="9" />
-                                <!-- 내부 원 -->
-                                <circle cx="12" cy="12" r="5" />
-                                <!-- 중심 점 -->
-                                <circle cx="12" cy="12" r="1.5" fill="currentColor" />
-                            </svg>
+                            <TargetIcon width={18} height={18} />
                         {:else if getCategoryIcon(task.category) === 'refresh'}
-                            <!-- 리프레시 아이콘 SVG - design.png 스타일 -->
-                            <svg 
-                                width="18" 
-                                height="18" 
-                                viewBox="0 0 24 24" 
-                                fill="none" 
-                                stroke="currentColor" 
-                                stroke-width="1.5" 
-                                stroke-linecap="round" 
-                                stroke-linejoin="round"
-                                class="category-icon"
-                            >
-                                <!-- 회전 화살표 -->
-                                <polyline points="23 4 23 10 17 10"></polyline>
-                                <polyline points="1 20 1 14 7 14"></polyline>
-                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                            </svg>
+                            <RefreshIcon width={18} height={18} />
                         {:else if getCategoryIcon(task.category) === 'zap'}
-                            <!-- 번개 아이콘 SVG - design.png 스타일 -->
-                            <svg 
-                                width="18" 
-                                height="18" 
-                                viewBox="0 0 24 24" 
-                                fill="none" 
-                                stroke="currentColor" 
-                                stroke-width="1.5" 
-                                stroke-linecap="round" 
-                                stroke-linejoin="round"
-                                class="category-icon"
-                            >
-                                <!-- 번개 모양 -->
-                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                            </svg>
+                            <ZapIcon width={18} height={18} />
                         {:else}
                             {getCategoryIcon(task.category)}
                         {/if}
@@ -476,10 +591,7 @@
                                     class="edit-input"
                                 />
                                 <button class="edit-cancel-btn" on:click={() => cancelEdit()} title="Cancel (ESC)">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                                    </svg>
+                                    <CancelIcon width={16} height={16} />
                                 </button>
                             </div>
                         {:else}
@@ -490,11 +602,15 @@
                         <span class="tag">{task.category}</span>
                     {/if}
                     <div class="action-buttons">
-                        <button class="check-btn" on:click={() => toggleTask(task.id)}>
+                        <button 
+                            class="check-btn" 
+                            class:animating={animatingCheckId === task.id}
+                            on:click={() => toggleTask(task.id)}
+                        >
                             {#if task.isComplete}
-                                <div class="check-icon">✓</div>
+                                <div class="check-icon" class:animating={animatingCheckId === task.id}>✓</div>
                                 {#if completedId === task.id}
-                                    <div class="reward-pop" in:fly="{{ y: 20, duration: 500 }}" out:fade>
+                                    <div class="reward-pop" in:fly="{{ y: 20, duration: 600, easing: (t) => 1 - Math.pow(1 - t, 3) }}" out:fade={{ duration: 300 }}>
                                         <span>+{task.xp} XP</span>
                                         <span class="particles">✨</span>
                                     </div>
@@ -507,6 +623,45 @@
                 </li>
             {/each}
         </ul>
+        
+        <!-- Shadow div (드래그 중일 때만 표시) -->
+        {#if isVerticalSwiping && draggedTaskData && draggedTaskShadowY !== null && taskListElement}
+            {@const task = draggedTaskData}
+            {@const taskListRect = taskListElement.getBoundingClientRect()}
+            {@const shadowY = draggedTaskShadowY - taskListRect.top}
+            <li 
+                class="task-shadow"
+                style="position: absolute; top: {shadowY}px; left: 0; right: 0; pointer-events: none; z-index: 1001;"
+            >
+                <span class="index">{(task.order ?? 0) + 1}.</span>
+                <span class="icon">
+                    {#if getCategoryIcon(task.category) === 'target'}
+                        <TargetIcon width={18} height={18} />
+                    {:else if getCategoryIcon(task.category) === 'refresh'}
+                        <RefreshIcon width={18} height={18} />
+                    {:else if getCategoryIcon(task.category) === 'zap'}
+                        <ZapIcon width={18} height={18} />
+                    {:else}
+                        {getCategoryIcon(task.category)}
+                    {/if}
+                </span>
+                <div class="content">
+                    <span class="title">{task.title}</span>
+                </div>
+                {#if task.category}
+                    <span class="tag">{task.category}</span>
+                {/if}
+                <div class="action-buttons">
+                    <button class="check-btn" disabled>
+                        {#if task.isComplete}
+                            <div class="check-icon">✓</div>
+                        {:else}
+                            <div class="circle"></div>
+                        {/if}
+                    </button>
+                </div>
+            </li>
+        {/if}
     </div>
     
     <!-- 완료된 할 일 섹션 -->
@@ -514,20 +669,7 @@
         <div class="completed-section">
             <div class="completed-header" on:click={toggleCompletedSection} role="button" tabindex="0" on:keydown={(e) => e.key === 'Enter' && toggleCompletedSection()}>
                 <h3>Completed Tasks ({completedTodos.length})</h3>
-                <svg 
-                    class="collapse-icon" 
-                    class:collapsed={completedSectionCollapsed}
-                    width="20" 
-                    height="20" 
-                    viewBox="0 0 24 24" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    stroke-width="2" 
-                    stroke-linecap="round" 
-                    stroke-linejoin="round"
-                >
-                    <polyline points="6 9 12 15 18 9"></polyline>
-                </svg>
+                <CollapseIcon width={20} height={20} collapsed={completedSectionCollapsed} />
             </div>
             {#if !completedSectionCollapsed}
                 <ul 
@@ -538,57 +680,17 @@
                         <li 
                             class:completed={task.isComplete} 
                             class:focus={task.category === 'Focus'}
+                            class:completed-task={true}
                             transition:fade={{ duration: 300 }}
-                            style="cursor: default;"
                         >
                             <span class="index">{(task.order ?? (activeTodos.length + index)) + 1}.</span>
                             <span class="icon">
                                 {#if getCategoryIcon(task.category) === 'target'}
-                                    <svg 
-                                        width="18" 
-                                        height="18" 
-                                        viewBox="0 0 24 24" 
-                                        fill="none" 
-                                        stroke="currentColor" 
-                                        stroke-width="1.5" 
-                                        stroke-linecap="round" 
-                                        stroke-linejoin="round"
-                                        class="category-icon"
-                                    >
-                                        <circle cx="12" cy="12" r="9" />
-                                        <circle cx="12" cy="12" r="5" />
-                                        <circle cx="12" cy="12" r="1.5" fill="currentColor" />
-                                    </svg>
+                                    <TargetIcon width={18} height={18} />
                                 {:else if getCategoryIcon(task.category) === 'refresh'}
-                                    <svg 
-                                        width="18" 
-                                        height="18" 
-                                        viewBox="0 0 24 24" 
-                                        fill="none" 
-                                        stroke="currentColor" 
-                                        stroke-width="1.5" 
-                                        stroke-linecap="round" 
-                                        stroke-linejoin="round"
-                                        class="category-icon"
-                                    >
-                                        <polyline points="23 4 23 10 17 10"></polyline>
-                                        <polyline points="1 20 1 14 7 14"></polyline>
-                                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                                    </svg>
+                                    <RefreshIcon width={18} height={18} />
                                 {:else if getCategoryIcon(task.category) === 'zap'}
-                                    <svg 
-                                        width="18" 
-                                        height="18" 
-                                        viewBox="0 0 24 24" 
-                                        fill="none" 
-                                        stroke="currentColor" 
-                                        stroke-width="1.5" 
-                                        stroke-linecap="round" 
-                                        stroke-linejoin="round"
-                                        class="category-icon"
-                                    >
-                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                                    </svg>
+                                    <ZapIcon width={18} height={18} />
                                 {:else}
                                     {getCategoryIcon(task.category)}
                                 {/if}
@@ -619,357 +721,3 @@
     onCancel={clearSelection}
 />
 </div>
-
-<style>
-    .planning-screen-wrapper {
-        position: relative;
-        width: 100%;
-        height: 100%;
-    }
-
-    .planning-screen {
-        padding: 20px;
-        height: 100%;
-        box-sizing: border-box;
-        /* Planning Mode 자체는 배경이 아닌 투명한 카드가 주를 이루게 합니다. */
-    }
-
-    /* 헤더와 입력창 컨테이너 */
-    .planning-screen > header, .search-box, .task-list {
-        background: var(--card-bg); /* app.css의 반투명 배경 변수 사용 */
-        backdrop-filter: blur(8px); /* 글래스모피즘 핵심: 블러 효과 */
-        border: var(--glass-border); /* 얇고 밝은 테두리 */
-        border-radius: 15px;
-        padding: 15px 20px;
-        margin-bottom: 20px;
-    }
-
-    header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding-bottom: 15px; /* 헤더와 검색창 분리 */
-        margin-bottom: 0;
-        background: none; /* 헤더는 독립된 스타일을 위해 배경 제거 */
-        border: none;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    h1 { font-size: 1.2rem; font-weight: 600; margin: 0; }
-    .menu-btn {
-        background: none;
-        border: none;
-        color: var(--primary-cyan);
-        font-size: 1.5rem;
-        cursor: pointer;
-        text-shadow: 0 0 5px var(--primary-cyan); /* 네온 효과 */
-    }
-
-    /* 할 일 입력창 래퍼 */
-    .task-input-wrapper {
-        margin-top: 20px;
-    }
-
-    /* 할 일 목록 제목 */
-    h3 {
-        font-size: 0.85rem;
-        color: var(--primary-cyan); /* 제목을 네온 색상으로 강조 */
-        margin: 0 0 15px 0;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        text-shadow: 0 0 5px rgba(0, 240, 255, 0.3);
-    }
-    
-    /* 완료된 할 일 섹션 */
-    .completed-section {
-        margin-top: 20px;
-        background: var(--card-bg);
-        backdrop-filter: blur(8px);
-        border: var(--glass-border);
-        border-radius: 15px;
-        padding: 15px 20px;
-        box-sizing: border-box;
-    }
-    
-    .completed-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        cursor: pointer;
-        user-select: none;
-        padding: 5px 0;
-        transition: opacity 0.2s;
-    }
-    
-    .completed-header:hover {
-        opacity: 0.8;
-    }
-    
-    .completed-header h3 {
-        margin: 0;
-        font-size: 0.85rem;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    
-    .collapse-icon {
-        color: var(--text-muted);
-        transition: transform 0.3s ease;
-        flex-shrink: 0;
-    }
-    
-    .collapse-icon.collapsed {
-        transform: rotate(-90deg);
-    }
-    
-    .completed-list {
-        list-style: none;
-        padding: 0;
-        margin-top: 15px;
-    }
-    
-    .completed-list li {
-        display: flex;
-        align-items: center;
-        padding: 8px 0;
-        border-bottom: 1px solid rgba(255,255,255,0.08);
-        position: relative;
-        transition: background 0.2s;
-    }
-    
-    .completed-list li:last-child {
-        border-bottom: none;
-    }
-
-    ul { list-style: none; padding: 0; }
-
-    li {
-        display: flex;
-        align-items: center;
-        padding: 8px 0; /* 높이 줄이기: 12px → 8px */
-        border-bottom: 1px solid rgba(255,255,255,0.08); /* 목록 구분선 */
-        position: relative;
-        transition: background 0.2s;
-        cursor: grab;
-        user-select: none;
-        touch-action: pan-y; /* 수직 스크롤은 허용, 수평 스와이프는 커스텀 처리 */
-    }
-    
-    /* 수평 스와이프 중에는 드래그앤드롭 비활성화 */
-    li.swiping {
-        touch-action: pan-x; /* 수평 스와이프만 허용 */
-    }
-
-    li:active {
-        cursor: grabbing;
-    }
-
-    li.swiping {
-        transition: transform 0.1s ease-out; /* 스와이프 중 부드러운 전환 */
-    }
-    
-    /* 드래그앤드롭 시각적 피드백 (수직 드래그만) */
-    li.svelte-dnd-draggable {
-        cursor: grab;
-    }
-    
-    li.svelte-dnd-draggable:active {
-        cursor: grabbing;
-    }
-    
-    li.svelte-dnd-dragged {
-        opacity: 0.7;
-        transform: scale(0.98);
-        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4), 0 0 30px rgba(0, 240, 255, 0.4), 0 0 50px rgba(0, 240, 255, 0.2);
-        z-index: 1000;
-        transition: all 0.2s ease;
-    }
-
-    /* 선택된 할 일의 시각적 효과 - 왼쪽으로 약간 밀림 */
-    li.selected {
-        opacity: 0.85;
-        background: rgba(255, 107, 157, 0.1);
-        border-right: 3px solid #ff6b9d;
-        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s, background 0.3s;
-        /* transform은 style 속성에서 처리 */
-    }
-
-    li:last-child { border-bottom: none; }
-
-    .index { width: 25px; color: var(--text-muted); font-size: 0.9rem; }
-    .icon { 
-        margin-right: 8px; 
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-    } /* 아이콘과 숫자 간격 줄이기: 12px → 8px */
-    
-    /* 카테고리 아이콘 스타일 - design.png와 동일한 모노크롬 스타일 */
-    .category-icon {
-        color: var(--text-main);
-        width: 18px;
-        height: 18px;
-        opacity: 0.9;
-    }
-    .content { flex: 1; display: flex; flex-direction: column; }
-    .title { 
-        font-size: 0.95rem; 
-        transition: color 0.3s;
-        cursor: text;
-        user-select: none;
-    }
-
-    .title:hover {
-        color: var(--primary-cyan);
-    }
-
-    /* 편집 모드 스타일 */
-    .edit-container {
-        position: relative;
-        width: 100%;
-    }
-
-    .edit-input {
-        width: 100%;
-        background: rgba(0, 240, 255, 0.1);
-        border: 1px solid var(--primary-cyan);
-        border-radius: 6px;
-        padding: 6px 32px 6px 10px; /* 오른쪽 패딩 추가하여 취소 버튼 공간 확보 */
-        color: var(--text-main);
-        font-size: 0.95rem;
-        outline: none;
-        box-shadow: 0 0 8px rgba(0, 240, 255, 0.3);
-        box-sizing: border-box;
-    }
-
-    .edit-input:focus {
-        box-shadow: 0 0 12px rgba(0, 240, 255, 0.5);
-    }
-
-    .edit-cancel-btn {
-        position: absolute;
-        top: 50%;
-        right: 6px;
-        transform: translateY(-50%);
-        background: none;
-        border: none;
-        cursor: pointer;
-        width: 24px;
-        height: 24px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 4px;
-        transition: background 0.2s, transform 0.2s, opacity 0.2s;
-        color: var(--text-muted);
-        opacity: 0.7;
-        z-index: 10;
-    }
-
-    .edit-cancel-btn:hover {
-        background: rgba(255, 107, 157, 0.2);
-        color: #ff6b9d;
-        opacity: 1;
-        transform: translateY(-50%) scale(1.1);
-    }
-
-    .edit-cancel-btn:active {
-        transform: translateY(-50%) scale(0.95);
-    }
-
-    /* Tag 스타일 - 배경 없음, 미묘한 회색 톤, 제목 오른쪽 배치 */
-    .tag {
-        color: var(--text-muted);
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        font-weight: normal;
-        opacity: 0.7;
-        margin-right: 8px; /* 태그와 완료 버튼 사이 간격 */
-        /* 배경 색상 완전 제거 */
-    }
-
-    /* 완료 상태 스타일 */
-    li.completed .title {
-        text-decoration: line-through;
-        color: var(--text-muted);
-        opacity: 0.6;
-    }
-
-    /* 액션 버튼 컨테이너 */
-    .action-buttons {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    /* 체크 버튼 - 크기 줄이기 */
-    .check-btn {
-        background: none; border: none; cursor: pointer; position: relative; width: 32px; height: 32px; /* 40px → 32px */
-        display: flex; align-items: center; justify-content: center;
-    }
-
-    @keyframes pulse-glow {
-        0%, 100% {
-            opacity: 0.8;
-            transform: scale(1);
-        }
-        50% {
-            opacity: 1;
-            transform: scale(1.1);
-        }
-    }
-
-    /* 체크 아이콘과 원형 아이콘 크기 조정 */
-    .circle {
-        width: 16px; height: 16px; /* 18px → 16px */
-        border: 2px solid var(--text-muted);
-        border-radius: 50%;
-        transition: border-color 0.3s;
-    }
-
-    /* 보상 팝업 효과 (별도 레이어로 표시) */
-    .reward-pop {
-        position: absolute;
-        right: 10px;
-        top: -30px; /* 위치 조정 */
-        background: rgba(0, 10, 20, 0.95);
-        border: 1px solid var(--primary-cyan);
-        padding: 8px 15px;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        box-shadow: 0 0 15px var(--primary-cyan);
-        z-index: 10;
-        pointer-events: none;
-        white-space: nowrap;
-        font-size: 0.8rem;
-    }
-
-    .check-icon {
-        font-size: 1rem; /* 1.2rem → 1rem */
-        color: var(--primary-cyan); 
-        font-weight: bold;
-        text-shadow: 0 0 10px var(--primary-cyan);
-        width: 16px; /* 18px → 16px */
-        height: 16px; /* 18px → 16px */
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .reward-pop span { color: white; margin-top: 0; font-weight: bold; }
-    .particles {
-        position: absolute;
-        font-size: 1rem;
-        opacity: 0.8;
-        right: 5px;
-        animation: float 1s infinite alternate;
-    }
-
-    @keyframes float {
-        from { transform: translateY(0px); }
-        to { transform: translateY(-5px); }
-    }
-</style>

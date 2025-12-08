@@ -21,6 +21,42 @@ body {
     justify-content: center;
     align-items: center;
     min-height: 100vh;
+    /* 브라우저 기본 드래그 및 텍스트 선택 비활성화 */
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
+/* 입력 필드에서는 텍스트 선택 허용 */
+input,
+textarea,
+[contenteditable="true"],
+[contenteditable="true"] * {
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+}
+
+/* 모든 요소에서 기본 드래그 비활성화 */
+* {
+    -webkit-user-drag: none;
+    -khtml-user-drag: none;
+    -moz-user-drag: none;
+    -o-user-drag: none;
+    user-drag: none;
+}
+
+/* 입력 필드의 이미지 등은 드래그 허용 (필요시) */
+input img,
+textarea img,
+[contenteditable="true"] img {
+    -webkit-user-drag: auto;
+    -khtml-user-drag: auto;
+    -moz-user-drag: auto;
+    -o-user-drag: auto;
+    user-drag: auto;
 }
 
 /* 스크롤바 커스텀 */

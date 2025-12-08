@@ -51,6 +51,11 @@
         padding: 5px 0;
         font-size: 0.95rem;
         outline: none;
+        /* 입력 필드에서는 텍스트 선택 허용 */
+        user-select: text;
+        -webkit-user-select: text;
+        -moz-user-select: text;
+        -ms-user-select: text;
     }
 
     .real-input::placeholder {
