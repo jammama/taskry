@@ -1,0 +1,510 @@
+.planning-screen-wrapper {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.planning-screen {
+    padding: 20px;
+    height: 100%;
+    box-sizing: border-box;
+    /* Planning Mode 자체는 배경이 아닌 투명한 카드가 주를 이루게 합니다. */
+}
+
+/* 헤더와 입력창 컨테이너 */
+.planning-screen > header, .search-box, .task-list {
+    background: var(--card-bg); /* app.css의 반투명 배경 변수 사용 */
+    backdrop-filter: blur(8px); /* 글래스모피즘 핵심: 블러 효과 */
+    border: var(--glass-border); /* 얇고 밝은 테두리 */
+    border-radius: 15px;
+    padding: 15px 20px;
+    margin-bottom: 20px;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 15px; /* 헤더와 검색창 분리 */
+    margin-bottom: 0;
+    background: none; /* 헤더는 독립된 스타일을 위해 배경 제거 */
+    border: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+h1 { font-size: 1.2rem; font-weight: 600; margin: 0; }
+.menu-btn {
+    background: none;
+    border: none;
+    color: var(--primary-cyan);
+    font-size: 1.5rem;
+    cursor: pointer;
+    text-shadow: 0 0 5px var(--primary-cyan); /* 네온 효과 */
+}
+
+/* 할 일 입력창 래퍼 */
+.task-input-wrapper {
+    margin-top: 20px;
+}
+
+/* 할 일 목록 제목 */
+h3 {
+    font-size: 0.85rem;
+    color: var(--primary-cyan); /* 제목을 네온 색상으로 강조 */
+    margin: 0 0 15px 0;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    text-shadow: 0 0 5px rgba(0, 240, 255, 0.3);
+}
+
+/* 완료된 할 일 섹션 */
+.completed-section {
+    margin-top: 20px;
+    background: var(--card-bg);
+    backdrop-filter: blur(8px);
+    border: var(--glass-border);
+    border-radius: 15px;
+    padding: 15px 20px;
+    box-sizing: border-box;
+}
+
+.completed-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+    padding: 5px 0;
+    transition: opacity 0.2s;
+}
+
+.completed-header:hover {
+    opacity: 0.8;
+}
+
+.completed-header h3 {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.collapse-icon {
+    color: var(--text-muted);
+    transition: transform 0.3s ease;
+    flex-shrink: 0;
+}
+
+.collapse-icon.collapsed {
+    transform: rotate(-90deg);
+}
+
+.completed-list {
+    list-style: none;
+    padding: 0;
+    margin-top: 15px;
+}
+
+.completed-list li {
+    display: flex;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    position: relative;
+    transition: background 0.2s;
+}
+
+.completed-list li:last-child {
+    border-bottom: none;
+}
+
+ul { list-style: none; padding: 0; }
+
+li {
+    display: flex;
+    align-items: center;
+    padding: 8px 0; /* 높이 줄이기: 12px → 8px */
+    border-bottom: 1px solid rgba(255,255,255,0.08); /* 목록 구분선 */
+    position: relative;
+    transition: background 0.2s;
+    cursor: grab;
+    user-select: none;
+    touch-action: pan-y; /* 수직 스크롤은 허용, 수평 스와이프는 커스텀 처리 */
+}
+
+/* 수평 스와이프 중에는 드래그앤드롭 비활성화 */
+li.swiping {
+    touch-action: pan-x; /* 수평 스와이프만 허용 */
+}
+
+li:active {
+    cursor: grabbing;
+}
+
+li.swiping {
+    transition: transform 0.1s ease-out; /* 스와이프 중 부드러운 전환 */
+}
+
+/* 수직 스와이프(순서 변경) 시각적 피드백 */
+li.vertical-swiping {
+    opacity: 0.5; /* 드래그 중인 Task는 흐릿하게 */
+    cursor: grabbing;
+}
+
+/* 드래그된 Task는 Shadowing 상태로 유지 (원래 위치에 그림자) */
+li.dragged-task {
+    opacity: 0.5; /* 드래그 중인 Task는 흐릿하게 */
+}
+
+/* Shadow div 스타일 */
+li.task-shadow {
+    background: var(--card-bg);
+    backdrop-filter: blur(8px);
+    border: var(--glass-border);
+    border-radius: 8px;
+    padding: 8px 20px;
+    margin: 0;
+    box-shadow: 0 4px 20px rgba(0, 240, 255, 0.5);
+    opacity: 0.95;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* 드롭 위치 표시 - Task의 상단 border 강조 */
+li.drop-target-top {
+    border-top: 3px solid var(--primary-cyan) !important;
+    box-shadow: 0 -2px 10px rgba(0, 240, 255, 0.6), 
+                0 -4px 20px rgba(0, 240, 255, 0.4) !important;
+    animation: drop-border-pulse-top 1s ease-in-out infinite;
+}
+
+/* 드롭 위치 표시 - Task의 하단 border 강조 */
+li.drop-target-bottom {
+    border-bottom: 3px solid var(--primary-cyan) !important;
+    box-shadow: 0 2px 10px rgba(0, 240, 255, 0.6), 
+                0 4px 20px rgba(0, 240, 255, 0.4) !important;
+    animation: drop-border-pulse-bottom 1s ease-in-out infinite;
+}
+
+@keyframes drop-border-pulse-top {
+    0%, 100% {
+        border-top-color: var(--primary-cyan);
+        box-shadow: 0 -2px 10px rgba(0, 240, 255, 0.6), 
+                    0 -4px 20px rgba(0, 240, 255, 0.4) !important;
+    }
+    50% {
+        border-top-color: rgba(0, 240, 255, 0.9);
+        box-shadow: 0 -3px 15px rgba(0, 240, 255, 0.8), 
+                    0 -6px 30px rgba(0, 240, 255, 0.6) !important;
+    }
+}
+
+@keyframes drop-border-pulse-bottom {
+    0%, 100% {
+        border-bottom-color: var(--primary-cyan);
+        box-shadow: 0 2px 10px rgba(0, 240, 255, 0.6), 
+                    0 4px 20px rgba(0, 240, 255, 0.4) !important;
+    }
+    50% {
+        border-bottom-color: rgba(0, 240, 255, 0.9);
+        box-shadow: 0 3px 15px rgba(0, 240, 255, 0.8), 
+                    0 6px 30px rgba(0, 240, 255, 0.6) !important;
+    }
+}
+
+/* 선택된 할 일의 시각적 효과 - 왼쪽으로 약간 밀림 */
+li.selected {
+    transform: translateX(-10px); /* CSS 클래스로 transform 처리 - 반응성 보장 */
+    opacity: 0.85;
+    background: rgba(255, 107, 157, 0.1);
+    border-right: 3px solid #ff6b9d;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s, background 0.3s;
+}
+
+/* 선택되지 않은 할 일은 원래 위치로 복원 */
+li:not(.selected):not(.swiping) {
+    transform: translateX(0);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+li:last-child { border-bottom: none; }
+
+.index { width: 25px; color: var(--text-muted); font-size: 0.9rem; }
+.icon { 
+    margin-right: 8px; 
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+} /* 아이콘과 숫자 간격 줄이기: 12px → 8px */
+
+/* 카테고리 아이콘 스타일 - design.png와 동일한 모노크롬 스타일 */
+.category-icon {
+    color: var(--text-main);
+    width: 18px;
+    height: 18px;
+    opacity: 0.9;
+}
+.content { flex: 1; display: flex; flex-direction: column; }
+.title { 
+    font-size: 0.95rem; 
+    transition: color 0.3s;
+    cursor: text;
+    /* user-select는 전역 CSS에서 처리 */
+}
+
+.title:hover {
+    color: var(--primary-cyan);
+}
+
+/* 편집 모드 스타일 */
+.edit-container {
+    position: relative;
+    width: 100%;
+}
+
+.edit-input {
+    width: 100%;
+    background: rgba(0, 240, 255, 0.1);
+    border: 1px solid var(--primary-cyan);
+    border-radius: 6px;
+    padding: 6px 32px 6px 10px; /* 오른쪽 패딩 추가하여 취소 버튼 공간 확보 */
+    color: var(--text-main);
+    font-size: 0.95rem;
+    outline: none;
+    box-shadow: 0 0 8px rgba(0, 240, 255, 0.3);
+    box-sizing: border-box;
+    /* 입력 필드에서는 텍스트 선택 허용 */
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+}
+
+.edit-input:focus {
+    box-shadow: 0 0 12px rgba(0, 240, 255, 0.5);
+}
+
+.edit-cancel-btn {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: background 0.2s, transform 0.2s, opacity 0.2s;
+    color: var(--text-muted);
+    opacity: 0.7;
+    z-index: 10;
+}
+
+.edit-cancel-btn:hover {
+    background: rgba(255, 107, 157, 0.2);
+    color: #ff6b9d;
+    opacity: 1;
+    transform: translateY(-50%) scale(1.1);
+}
+
+.edit-cancel-btn:active {
+    transform: translateY(-50%) scale(0.95);
+}
+
+/* Tag 스타일 - 배경 없음, 미묘한 회색 톤, 제목 오른쪽 배치 */
+.tag {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    font-weight: normal;
+    opacity: 0.7;
+    margin-right: 8px; /* 태그와 완료 버튼 사이 간격 */
+    /* 배경 색상 완전 제거 */
+}
+
+/* 완료 상태 스타일 */
+li.completed .title {
+    text-decoration: line-through;
+    color: var(--text-muted);
+    opacity: 0.6;
+}
+
+/* 액션 버튼 컨테이너 */
+.action-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* 체크 버튼 - 크기 줄이기 */
+.check-btn {
+    background: none; border: none; cursor: pointer; position: relative; width: 32px; height: 32px; /* 40px → 32px */
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.2s ease-out;
+}
+
+.check-btn:active {
+    transform: scale(0.95);
+}
+
+/* 체크박스 애니메이션 강화 (Bounce, Scale, Glow) */
+.check-btn.animating {
+    animation: check-bounce 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes check-bounce {
+    0% {
+        transform: scale(1);
+    }
+    30% {
+        transform: scale(1.3);
+    }
+    50% {
+        transform: scale(0.9);
+    }
+    70% {
+        transform: scale(1.1);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+@keyframes pulse-glow {
+    0%, 100% {
+        opacity: 0.8;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.1);
+    }
+}
+
+/* 체크 아이콘과 원형 아이콘 크기 조정 */
+.circle {
+    width: 16px; height: 16px; /* 18px → 16px */
+    border: 2px solid var(--text-muted);
+    border-radius: 50%;
+    transition: border-color 0.3s;
+}
+
+/* 체크 아이콘 애니메이션 강화 */
+.check-icon {
+    font-size: 1rem; /* 1.2rem → 1rem */
+    color: var(--primary-cyan); 
+    font-weight: bold;
+    text-shadow: 0 0 10px var(--primary-cyan);
+    width: 16px; /* 18px → 16px */
+    height: 16px; /* 18px → 16px */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease-out;
+}
+
+.check-icon.animating {
+    animation: check-icon-glow 0.6s ease-out;
+    text-shadow: 0 0 20px var(--primary-cyan), 0 0 30px var(--primary-cyan), 0 0 40px var(--primary-cyan);
+}
+
+@keyframes check-icon-glow {
+    0% {
+        transform: scale(0.5);
+        opacity: 0;
+    }
+    50% {
+        transform: scale(1.3);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* 보상 팝업 효과 (별도 레이어로 표시) - 애니메이션 강화 */
+.reward-pop {
+    position: absolute;
+    right: 10px;
+    top: -30px; /* 위치 조정 */
+    background: rgba(0, 10, 20, 0.95);
+    border: 2px solid var(--primary-cyan);
+    padding: 8px 15px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 0 20px rgba(0, 240, 255, 0.6), 
+                0 0 40px rgba(0, 240, 255, 0.4),
+                0 0 60px rgba(0, 240, 255, 0.2);
+    z-index: 10;
+    pointer-events: none;
+    white-space: nowrap;
+    font-size: 0.8rem;
+    animation: reward-pop-glow 2.5s ease-in-out infinite;
+}
+
+@keyframes reward-pop-glow {
+    0%, 100% {
+        box-shadow: 0 0 20px rgba(0, 240, 255, 0.6), 
+                    0 0 40px rgba(0, 240, 255, 0.4),
+                    0 0 60px rgba(0, 240, 255, 0.2);
+        border-color: var(--primary-cyan);
+    }
+    50% {
+        box-shadow: 0 0 30px rgba(0, 240, 255, 0.8), 
+                    0 0 60px rgba(0, 240, 255, 0.6),
+                    0 0 90px rgba(0, 240, 255, 0.4);
+        border-color: rgba(0, 240, 255, 0.9);
+    }
+}
+
+/* 화면 흔들림 효과 */
+@keyframes screen-shake {
+    0%, 100% {
+        transform: translateX(0);
+    }
+    10%, 30%, 50%, 70%, 90% {
+        transform: translateX(-2px);
+    }
+    20%, 40%, 60%, 80% {
+        transform: translateX(2px);
+    }
+}
+
+
+.reward-pop span { color: white; margin-top: 0; font-weight: bold; }
+.particles {
+    position: absolute;
+    font-size: 1rem;
+    opacity: 0.8;
+    right: 5px;
+    animation: float 1s infinite alternate;
+}
+
+@keyframes float {
+    from { transform: translateY(0px); }
+    to { transform: translateY(-5px); }
+}
+
+/* 동적 스와이프 스타일을 위한 CSS 변수 */
+li.swiping-horizontal {
+    transform: translateX(var(--swipe-x, 0));
+}
+
+li.swiping-vertical {
+    transform: translateY(var(--swipe-y, 0));
+}
+
+/* 완료된 할 일 커서 스타일 */
+li.completed-task {
+    cursor: default;
+}
+
+/* CollapseIcon 컴포넌트 스타일은 컴포넌트 내부에서 처리하므로 제거 */

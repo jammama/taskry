@@ -987,3 +987,128 @@ WebStorm에서 SvelteKit 프로젝트를 시작하시나요? SvelteKit은 터미
 
 다음으로, SvelteKit 프로젝트 생성 및 초기 Supabase 연동 코드를 먼저 함께 구성해 드릴까요?
 
+---
+
+## 📋 토픽 15: 일정 관리 기능 고도화 및 범위 결정
+
+### 초기 고민
+- 단순한 To-Do 앱에 일정 관리 기능을 추가하려고 함
+- '어떤 지정일자에 어떤 할 일 넣기' 기능이 필요
+- 하지만 앱의 목적을 잃을 수 있다는 우려
+
+### 핵심 결정 사항
+
+#### 1. 일의 단위 정의
+- **Task (ToDo)**: 일일 실행 및 완료 (Immediate Action). 가장 작은 실행 단위. 하루 단위로만 관리
+- **Mission**: 장기 목표 및 일정 배분 (Scheduling & Goal Setting). Task의 상위 개념
+- **결론**: Task는 하루 단위로만 생각하고, 그 이상은 Mission으로 분리
+
+#### 2. Mission 기능 제외 결정
+- Mission 기능을 도입하면 FRC 규격 맞춤, 화면 복잡도 증가 등의 문제 발생
+- Task 화면이 지저분해지고 사용자 피로도 증가
+- **최종 결정**: Mission 기능 완전히 제외, 대신 'Goals (목표 상기)' 기능으로 대체
+
+#### 3. Goals (목표 상기) 기능 도입
+- **역할**: 사용자가 추구하는 가장 중요한 1~3가지 목표를 텍스트로 등록
+- **데이터 형식**: 단순한 텍스트 입력만, 기간/FRC 분류 없음
+- **UI 통합**: 
+  - Planning Mode 어딘가에 단순한 popup 버튼
+  - 누르면 Goal List가 뜨는 정도로 옵셔널하게 제공
+  - NewTaskInput의 Placeholder 텍스트에 Goal 참조 가능
+- **AI 연계**: Task 입력 시 AI가 등록된 Goal을 참조하여 FRC 분류 보조 역할만 수행
+
+#### 4. Due Date 배제 결정
+- '기간이 지나서 실패'하는 경우를 굳이 만들 필요 없음
+- 실패 개념은 동기 부여 저해 및 죄책감 유발
+- **최종 결정**: Due Date 필드 배제, Task는 오직 '완료' 또는 '삭제'만 가능
+- **대안**: displayDate 필드로 '오늘' 목록에 나타날 날짜만 관리
+
+#### 5. Task 정보 표시 전략
+- Task 화면을 95% 이상 중점으로 두되, 조금 집중하면 다른 정보 확인 가능
+- **Single Tap 상세 확장**: Task를 탭하면 부드럽게 수직 확장되어 Mission/FRC 정보 표시
+- **일반 상태**: [체크박스] [Task 제목] [FRC 아이콘]
+- **확장 상태**: [체크박스] [Task 제목] [FRC 아이콘] + [Mission: Project Name] [Due: 날짜]
+
+---
+
+## 📋 토픽 16: 개발 마일스톤 정리
+
+### 현재 구현 상태
+- 기본 UI / CRUD 기능
+- 브라우저에 저장되는 DB (IndexedDB)
+
+### 개발 마일스톤
+
+#### Phase 0: 환경 구축 및 서버 연동 (Deployment & Auth)
+**목표**: 앱을 실제 환경에 배포하고, 사용자별 데이터 관리를 시작
+
+| 마일스톤 ID | 작업 내용 | 우선순위 |
+|---|---|---|
+| M0.1 | 프로젝트 배포 환경 구축 | 최우선 |
+| | Vercel 배포 파이프라인 설정 및 자동화 | |
+| M0.2 | Supabase DB 초기 설정 | 최우선 |
+| | Tasks, Users, Goals, Rewards 테이블 생성 및 스키마 정의 | |
+| M0.3 | Google OAuth (로그인) 통합 | 최우선 |
+| | Supabase Auth를 사용한 Google 소셜 로그인 구현 | |
+| M0.4 | 로컬/서버 동기화 로직 전환 | 최우선 |
+| | 기존 로컬 IndexedDB에 저장된 데이터를 Supabase DB로 전환 및 Tasks CRUD 로직 재구성 | |
+
+#### Phase 1: MVP 사용성 및 QoL 개선 (UX Refinement)
+**목표**: PM(사용자님)이 불편함 없이 앱을 일상적으로 사용할 수 있도록 기본적인 UX 문제를 해결
+
+| 마일스톤 ID | 작업 내용 | 우선순위 |
+|---|---|---|
+| M1.1 | 입력 UI 위치 조정 | 높음 |
+| | NewTaskInput.svelte 컴포넌트를 화면 최하단에 고정하도록 배치 변경 | |
+| M1.2 | Goals 상기 기능 통합 | 높음 |
+| | Planning Mode의 어딘가에 Goals List를 띄우는 단순한 팝업 버튼 (선택적 기능) 구현 | |
+| M1.3 | Tasks UI 세부 조정 | 중간 |
+| | Task 글자수 제한(예: 80자) 구현 및 넘칠 경우 처리 방식 결정. 아이콘 및 FRC 스탯의 위치와 크기 재조정 (단순함 유지) | |
+| M1.4 | 완료된 Task의 History 로직 | 중간 |
+| | 완료된 Task는 24시간 후 Planning Mode 화면에서 자동으로 사라지도록 필터링 로직 구현. (별도의 History View 준비) | |
+
+#### Phase 2: 게이미피케이션 몰입도 강화 (Immersion)
+**목표**: Taskry의 'Juicy'한 감성을 완성하고, Reward 시스템을 위한 기초 데이터 구조를 확립
+
+| 마일스톤 ID | 작업 내용 | 우선순위 |
+|---|---|---|
+| M2.1 | 사운드 이펙트 통합 (Juicy Audio) | 중간 |
+| | Task 완료 시 및 체크박스 탭 시 효과음 추가. (Svelte Audio Context 사용 권장) | |
+| M2.2 | Flow Engine 스탯 추적 데이터 설계 | 중간 |
+| | Users 테이블에 xp_total, flow_energy_balance 필드 추가. FRC 스탯 추적 로직 준비 | |
+| M2.3 | Flow Planner Core 데이터 정의 | 중간 |
+| | 아이템 테이블에 'Flow Planner Core' 아이템 등록 및 unlocked_mission_mode: boolean 상태 필드 관리 로직 작성 | |
+
+#### Phase 3: Reward Mode 구현 (Next Major Feature)
+**목표**: Taskry의 절반인 Reward Mode 화면을 구체적으로 설계하고 구현
+
+| 마일스톤 ID | 작업 내용 | 우선순위 |
+|---|---|---|
+| M3.1 | Reward Mode 화면 기획 및 설계 | 낮음 |
+| | Flow Engine 시각화 영역, Shop/획득 영역, 스탯 요약 영역의 최종 와이어프레임 및 디자인 확정 | |
+| M3.2 | Reward Mode (MVP) 구현 | 낮음 |
+| | 화면 레이아웃 및 Flow Planner Core를 구매할 수 있는 Shop 컴포넌트 구현 | |
+| M3.3 | Flow Engine 시각화 연동 | 낮음 |
+| | FRC 스탯 변화에 따라 Engine 이미지가 동적으로 업데이트되는 시각화 로직 구현 | |
+
+---
+
+## 📝 최종 핵심 결정 사항 요약
+
+### 기능 범위 결정
+1. **Mission 기능 제외**: 장기 목표 관리는 Mission이 아닌 Goals로 대체
+2. **Due Date 배제**: 실패 개념 없이, Task는 완료 또는 삭제만 가능
+3. **Goals 기능**: 단순 텍스트로 목표 상기만 제공, 옵셔널 기능
+4. **Task 정보 표시**: Single Tap으로 상세 정보 확장, 평소에는 최소한의 정보만 표시
+
+### 개발 우선순위
+1. **Phase 0 (최우선)**: 배포, 인증, 서버 연동
+2. **Phase 1 (높음)**: 사용성 개선 및 QoL 향상
+3. **Phase 2 (중간)**: 게이미피케이션 요소 강화
+4. **Phase 3 (낮음)**: Reward Mode 구현
+
+### 프로젝트 정체성 재확립
+- **Taskry는 'Daily Flow Engine'**: 일일 실행에 집중하는 단순한 To-Do 앱
+- **복잡한 플래너가 아님**: Mission, 캘린더 뷰 등은 제외
+- **단순함 유지**: Task 화면은 95% 이상 Task만 보이도록 설계
+

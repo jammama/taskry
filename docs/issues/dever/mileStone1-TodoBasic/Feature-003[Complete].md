@@ -1,0 +1,129 @@
+**[Assignee]:** @AI_Dever
+
+**[Issue]:** #Feature-003 (완료된 할 일 분리 표시)
+
+**[Feature Name]:** 완료된 할 일을 별도 섹션으로 분리 및 접기/펴기 기능
+
+**[Milestone]:** Milestone 1: Planning Mode 기본 구현
+
+---
+
+## 📖 기능 개요
+
+### 목적
+진행할 할 일과 완료된 할 일을 분리하여 표시하고, 완료된 할 일 섹션에 접기/펴기 기능을 추가하여 사용성을 개선합니다.
+
+### 사용자 스토리
+- **As a** 사용자
+- **I want** 완료된 할 일을 별도 리스트로 하단에 표시하고, 접고 펼 수 있는 것
+- **So that** 진행할 할 일에 집중하면서도 완료된 할 일을 확인할 수 있다
+
+---
+
+## 🎯 기능 요구사항
+
+### 핵심 기능
+1. 완료된 할 일을 별도 섹션으로 분리
+2. 완료된 할 일 섹션 접기/펴기 기능
+3. 접기/펴기 상태를 IndexedDB에 저장
+4. 완료된 할 일 섹션 UI 디자인
+
+### 상세 요구사항
+- 진행할 할 일: 상단에 표시
+- 완료된 할 일: 하단에 별도 섹션으로 표시
+- 접기/펴기 버튼: 섹션 헤더에 표시
+- 상태 저장: 사용자 선호도 기억
+- 애니메이션: 접기/펴기 시 부드러운 전환
+
+---
+
+## 🎨 UI/UX 명세
+
+### 화면 구성
+- 상단: 진행할 할 일 리스트
+- 하단: 완료된 할 일 섹션 (접기/펴기 가능)
+- 섹션 헤더: "완료된 할 일 (N개)" + 접기/펴기 아이콘
+
+### 인터랙션
+- 섹션 헤더 클릭 → 접기/펴기 토글
+- 접힘 상태: 완료된 할 일 개수만 표시
+- 펼침 상태: 완료된 할 일 리스트 표시
+
+---
+
+## 📝 작업 내역
+
+### [날짜] - 작업 시작
+- 이슈 생성 및 요구사항 정의
+
+---
+
+## 작업 완료 내역
+
+### 변경 사항
+- `src/lib/components/PlanningMode.svelte`: 완료된 할 일 분리 표시 및 접기/펴기 기능 구현
+- `src/lib/stores/todoStore.js`: 사용자 설정 저장/로드 함수 추가
+
+### 주요 수정 사항
+1. **완료된 할 일과 진행 중인 할 일 분리**
+   - `activeTodos`: `$todos.filter(task => !task.isComplete)` - 진행 중인 할 일
+   - `completedTodos`: `$todos.filter(task => task.isComplete)` - 완료된 할 일
+   - 반응형 문(`$:`)으로 자동 필터링
+
+2. **완료된 할 일 섹션 UI 구현**
+   - `.completed-section` 컨테이너 추가
+   - `.completed-header`: "Completed Tasks (N개)" 헤더 + 접기/펴기 아이콘
+   - `.completed-list`: 완료된 할 일 리스트
+   - 완료된 할 일은 스와이프 기능 비활성화 (삭제 선택 불필요)
+
+3. **접기/펴기 상태 관리 및 IndexedDB 저장**
+   - `completedSectionCollapsed` 변수로 상태 관리
+   - `getCompletedSectionCollapsed()`: IndexedDB에서 저장된 설정 로드
+   - `setCompletedSectionCollapsed(collapsed)`: IndexedDB에 설정 저장
+   - `onMount`에서 저장된 설정 자동 로드
+   - `toggleCompletedSection()`: 접기/펴기 토글 및 저장
+
+4. **접기/펴기 애니메이션 구현**
+   - `slide` transition 사용 (axis: 'y', duration: 300)
+   - `.collapse-icon` 회전 애니메이션 (collapsed 시 -90deg 회전)
+   - 부드러운 전환 효과
+
+5. **사용자 설정 저장 시스템**
+   - `todoStore.js`에 `SETTINGS_KEY = 'taskry.settings'` 추가
+   - `getCompletedSectionCollapsed()`: 비동기 함수로 설정 로드
+   - `setCompletedSectionCollapsed(collapsed)`: 비동기 함수로 설정 저장
+   - localforage를 사용하여 IndexedDB에 저장
+
+### 테스트 결과
+- ✅ 완료된 할 일과 진행 중인 할 일이 분리되어 표시되는지 확인
+- ✅ 완료된 할 일 섹션 헤더가 표시되는지 확인
+- ✅ 접기/펴기 버튼이 정상 작동하는지 확인
+- ✅ 접기/펴기 상태가 IndexedDB에 저장되는지 확인
+- ✅ 페이지 새로고침 후 저장된 상태가 복원되는지 확인
+- ✅ 접기/펴기 애니메이션이 부드럽게 작동하는지 확인
+- ✅ 완료된 할 일 섹션이 접힘 상태일 때 개수만 표시되는지 확인
+
+### 코드 변경 내역
+- **추가된 코드**:
+  - `activeTodos`, `completedTodos` 반응형 변수 (필터링)
+  - `completedSectionCollapsed` 상태 변수
+  - `toggleCompletedSection()` 함수
+  - `onMount` 훅 (설정 로드)
+  - 완료된 할 일 섹션 UI (`.completed-section`, `.completed-header`, `.completed-list`)
+  - `getCompletedSectionCollapsed()`, `setCompletedSectionCollapsed()` 함수 (todoStore.js)
+  - `SETTINGS_KEY` 상수
+- **수정된 코드**:
+  - 할 일 리스트: `$todos` → `activeTodos` (진행 중인 할 일만 표시)
+  - `slide` transition import 추가
+
+---
+
+**참고 문서**:
+- `docs/issues/planner/Mile1-UserFeedback(1).md` - 사용자 피드백 #5
+- `docs/Milestone-1.md` - Milestone 1 진행 상황
+- `docs/devGuideLine.md` - 개발 가이드라인
+
+**작성일**: 2024년  
+**마지막 업데이트**: 2024년 12월 1일  
+**완료일**: 2024년 12월 1일
+

@@ -568,17 +568,6 @@
                     })()}
                 >
                     <span class="index">{(task.order ?? index) + 1}.</span>
-                    <span class="icon">
-                        {#if getCategoryIcon(task.category) === 'target'}
-                            <TargetIcon width={18} height={18} />
-                        {:else if getCategoryIcon(task.category) === 'refresh'}
-                            <RefreshIcon width={18} height={18} />
-                        {:else if getCategoryIcon(task.category) === 'zap'}
-                            <ZapIcon width={18} height={18} />
-                        {:else}
-                            {getCategoryIcon(task.category)}
-                        {/if}
-                    </span>
                     <div class="content">
                         {#if editingId === task.id}
                             <div class="edit-container">
@@ -599,7 +588,19 @@
                         {/if}
                     </div>
                     {#if task.category}
+
+                        <span class="icon">
+                        {#if getCategoryIcon(task.category) === 'target'}
+                            <TargetIcon width={18} height={18} />
+                        {:else if getCategoryIcon(task.category) === 'refresh'}
+                            <RefreshIcon width={18} height={18} />
+                        {:else if getCategoryIcon(task.category) === 'zap'}
+                            <ZapIcon width={18} height={18} />
+                        {:else}
+                            {getCategoryIcon(task.category)}
+                        {/if}
                         <span class="tag">{task.category}</span>
+                    </span>
                     {/if}
                     <div class="action-buttons">
                         <button 
