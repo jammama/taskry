@@ -43,3 +43,5 @@
 - 입력 필드 선택자: `input`, `textarea`, `[contenteditable="true"]` 등
 - 전역 스타일 적용 시 입력 필드에 대한 예외 처리 필수
 
+
+
