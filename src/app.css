@@ -16,16 +16,34 @@ body {
     font-family: 'Inter', sans-serif;
     background-color: var(--bg-color); /* 📌 이 부분이 배경색을 결정합니다! */
     color: var(--text-main);
-    /* UI를 중앙에 배치하기 위한 flex 설정 (선택 사항) */
+    /* 기본 레이아웃: 모바일에서 "안 보이는" 현상 방지 */
     display: flex;
     justify-content: center;
-    align-items: center;
-    min-height: 100vh;
+    align-items: flex-start;
+    /* iOS 주소창/툴바 대응 */
+    min-height: 100svh;
+    padding: 16px 0;
+    overflow-y: auto;
     /* 브라우저 기본 드래그 및 텍스트 선택 비활성화 */
     user-select: none;
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
+}
+
+@supports (min-height: 100dvh) {
+    body {
+        min-height: 100dvh;
+    }
+}
+
+/* 화면이 충분히 큰 경우만 중앙 정렬 */
+@media (min-width: 480px) and (min-height: 700px) {
+    body {
+        align-items: center;
+        padding: 0;
+        overflow-y: hidden;
+    }
 }
 
 /* 입력 필드에서는 텍스트 선택 허용 */

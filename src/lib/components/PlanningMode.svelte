@@ -13,6 +13,8 @@
     import CollapseIcon from '$lib/components/icons/CollapseIcon.svelte';
     import CancelIcon from '$lib/components/icons/CancelIcon.svelte';
     import confetti from 'canvas-confetti';
+    import { signOut } from '$lib/stores/authStore.js';
+    import { supabase } from '$lib/supabaseClient';
     import './PlanningMode.css';
 
     let completedId = null;
@@ -239,10 +241,43 @@
         await setCompletedSectionCollapsed(completedSectionCollapsed);
     }
     
-    // 컴포넌트 마운트 시 저장된 설정 로드
+    // 사용자 정보
+    let currentUser = null;
+    
+    // 컴포넌트 마운트 시 초기화
     onMount(async () => {
+        // 완료된 할 일 섹션 설정 로드
         completedSectionCollapsed = await getCompletedSectionCollapsed();
+        
+        // 사용자 정보 가져오기
+        const { data: { session } } = await supabase.auth.getSession();
+        currentUser = session?.user ?? null;
+        
+        // 인증 상태 변경 감지 (로그아웃, 세션 만료 등)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            currentUser = session?.user ?? null;
+            
+            // 세션 만료 또는 로그아웃 감지
+            if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) {
+                console.log('사용자가 로그아웃되었거나 세션이 만료되었습니다.');
+            }
+        });
+        
+        // 컴포넌트 언마운트 시 구독 해제
+        return () => {
+            subscription.unsubscribe();
+        };
     });
+
+    // 로그아웃 함수
+    async function handleSignOut() {
+        const { error } = await signOut();
+        if (error) {
+            console.error('로그아웃 실패:', error);
+        }
+        // 로그아웃 성공 시 onAuthStateChange가 자동으로 user를 null로 설정하고
+        // +page.svelte에서 LoginScreen으로 전환됩니다
+    }
 
 
     function handleAddTask(title) {
@@ -306,29 +341,29 @@
     // 공통 로직: 편집 모드 체크 후 swipeHandler 호출 및 상태 업데이트
     function handleSwipeStart(event, taskId, element) {
         if (editingId === taskId) return;
-        // 브라우저 기본 드래그 동작 차단
-        event.preventDefault();
         swipeHandler.handleStart(event, taskId, element);
         updateSwipeState();
     }
 
     function handleSwipeMove(event, taskId) {
         if (editingId === taskId) return;
-        // 브라우저 기본 드래그 동작 차단
-        event.preventDefault();
         swipeHandler.handleMove(event, taskId);
         updateSwipeState();
     }
 
     function handleSwipeEnd(event, taskId) {
-        // 브라우저 기본 드래그 동작 차단
-        event.preventDefault();
         swipeHandler.handleEnd(event, taskId);
         updateSwipeState();
     }
 
     // 터치 이벤트 처리
     function handleTouchStart(event, taskId, element) {
+        // 버튼/입력 등 인터랙션은 스와이프 제스처로 가로채지 않음 (모바일 클릭 불가 버그 방지)
+        const target = event.target;
+        const isInteractive =
+            target?.closest?.('button, input, textarea, a, [role="button"], [contenteditable="true"]');
+        if (isInteractive) return;
+
         handleSwipeStart(event, taskId, element);
     }
 
@@ -528,7 +563,27 @@
 <div class="planning-screen">
     <header>
         <h1>Planning Mode</h1>
-        <button class="menu-btn">☰</button>
+        <div class="header-actions">
+            {#if currentUser}
+                <div class="user-info">
+                    {#if currentUser.user_metadata?.avatar_url}
+                        <img src={currentUser.user_metadata.avatar_url} alt="Profile" class="user-avatar" />
+                    {:else}
+                        <div class="user-avatar-placeholder">
+                            {currentUser.email?.[0]?.toUpperCase() || 'U'}
+                        </div>
+                    {/if}
+                    <span class="user-name">{currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0] || 'User'}</span>
+                </div>
+            {/if}
+            <button class="logout-btn" on:click={handleSignOut} title="로그아웃">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+            </button>
+        </div>
     </header>
 
     <div class="task-input-wrapper">

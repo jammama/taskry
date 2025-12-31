@@ -4,10 +4,11 @@ import adapter from '@sveltejs/adapter-static';
 const config = {
 	kit: {
 		adapter: adapter({
+			// SPA 모드: 모든 라우트를 index.html로 fallback
+			fallback: 'index.html',
 			// 기본값: 빌드된 파일을 'build' 디렉토리에 출력
 			// pages: 'build',
 			// assets: 'build',
-			// fallback: undefined,
 			// precompress: false,
 			// strict: true
 		})

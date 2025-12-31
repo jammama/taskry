@@ -1,0 +1,38 @@
+**[Assignee]:** @AI_Dever
+
+**[Issue]:** #Bug-M2-02 (모바일에서 Google 로그인 버튼/화면이 보이지 않음)
+
+**[Requirement]:** 
+1. **모바일에서도 로그인 UI가 항상 노출되어야 함**: iOS Safari/Chrome, Android Chrome에서 로그인 버튼이 화면 밖으로 밀려나거나 잘려서 보이지 않아서는 안 됩니다.
+2. **앱 카드(400x800) + 스케일 방식과 호환**: 로그인 화면의 높이/레이아웃이 `vh`(viewport) 기준으로 동작해 카드 내부 레이아웃을 깨뜨리지 않아야 합니다.
+
+**[Bug Details]:**
+- **버그**: 모바일에서 앱 진입 시 Google 로그인 버튼(혹은 로그인 콘텐츠)이 화면에 보이지 않음.
+- **재현 조건(추정)**:
+  - 모바일 접속
+  - 앱이 “카드 UI를 통째로 확대(scale)” 방식으로 표시되는 레이아웃
+- **원인(유력)**:
+  - `src/lib/components/LoginScreen.svelte`의 `.login-screen`이 `min-height: 100vh`를 사용
+  - 현재 앱은 `src/routes/+page.svelte`에서 카드(400x800)를 스케일링해 보여주는데,
+    로그인 화면이 **viewport 기준(100vh)**으로 높이를 잡으면 카드 내부(800px) 기준과 충돌하여
+    내부 콘텐츠가 아래로 밀리고, 카드 컨테이너(`overflow: hidden`)에 의해 **버튼이 잘려 보이지 않을 수 있음**
+
+**[Development Order]**
+1. 로그인 화면을 “카드/부모 컨테이너 기준”으로 레이아웃되게 수정
+   - `.login-screen`의 `min-height: 100vh` 제거/대체 (`height: 100%` / `min-height: 100%`)
+2. 모바일 실기기 확인
+   - 로그인 버튼이 항상 뷰포트 내에 보이는지 확인
+
+**[Target Files]:**
+- `src/lib/components/LoginScreen.svelte`
+- (간접) `src/routes/+page.svelte` (카드 스케일/overflow 정책)
+
+**[Dependencies]:** 
+- 없음
+
+**[Guideline Check]:** 
+- Dark Mode + Neon Glow 유지
+- 모바일에서 로그인 UX 저하 금지
+
+**[Technical Notes]**
+- 카드 내부 컴포넌트에서 `100vh`는 레이아웃을 쉽게 깨뜨립니다(부모 기준 `100%`를 우선).

@@ -1,0 +1,11 @@
+{
+  "typescript.tsdk": null,
+  "typescript.enable": false,
+  "javascript.validate.enable": true,
+  "files.associations": {
+    "*.js": "javascript",
+    "*.svelte": "svelte"
+  },
+  "js/ts.implicitProjectConfig.checkJs": false,
+  "js/ts.implicitProjectConfig.strict": false
+}
